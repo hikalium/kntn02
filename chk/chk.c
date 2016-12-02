@@ -14,7 +14,7 @@ int main(int argc, char *argv[])
 	for(;;){
 		c1 = fgetc(fp1);
 		c2 = fgetc(fp2);
-		if(c1 == EOF && c2 == EOF) break;
+		if((c1 == '\n' || c1 == EOF) && (c2 == '\n' || c2 == EOF)) break;
 		if(c1 != c2){
 			diff++;
 		}

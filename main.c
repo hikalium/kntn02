@@ -30,13 +30,13 @@ char *segs[MAX_SEGMENTS];
 int find_seg_ofs(const char *seg)
 {
 	int maxSameCount = 0, maxSameOfs = -1, sc, i;
-	fprintf(stderr, "S%d[%lu] = %s\n", 0, strlen(seg), seg);
+	fprintf(stderr, "S[%lu] = %s\n", strlen(seg), seg);
 	for(i = 0; i < tlen; i++){
 		sc = check_match(&tbuf[i], seg);
 		if(sc > maxSameCount){
 			maxSameCount = sc;
 			maxSameOfs = i;
-			fprintf(stderr, "Update: ofs = %d (cnt = %d / %lu)\n", maxSameOfs, maxSameCount, strlen(seg));
+			//fprintf(stderr, "Update: ofs = %d (cnt = %d / %lu)\n", maxSameOfs, maxSameCount, strlen(seg));
 		}
 	}
 	return maxSameOfs;
@@ -53,7 +53,7 @@ int main_prg(int argc, char** argv)
 	tlen = strlen(tbuf);
 	tlen--;
 	tbuf[tlen] = 0;
-	fprintf(stderr, "T'[%d] = %s\n", tlen, tbuf);
+	//fprintf(stderr, "T'[%d] = %s\n", tlen, tbuf);
 	
 	for(i = 0; i < MAX_SEGMENTS; i++){
 		if(!fgets(segs[i], INPUT_LINE_SIZE, stdin)){
@@ -68,8 +68,8 @@ int main_prg(int argc, char** argv)
 	qsort(segs, nseg, sizeof(char *), seglen_cmp);
 
 	int ofs;
-	for(i = 0; i < 10; i++){
-		fprintf(stderr, "S%d[%lu] = %s\n", i, strlen(segs[i]), segs[i]);
+	for(i = 0; i < nseg; i++){
+		//fprintf(stderr, "S%d[%lu] = %s\n", i, strlen(segs[i]), segs[i]);
 		ofs = find_seg_ofs(segs[i]);
 		strncpy(&tbuf[ofs], segs[i], strlen(segs[i]));
 	}	
