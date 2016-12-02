@@ -1,0 +1,6 @@
+.DS_Store
+grpwk
+*.o
+*_in
+*_ref
+*.txt
