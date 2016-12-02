@@ -14,7 +14,8 @@ int seglen_cmp(const void *p, const void *q)
 
 char tbuf[INPUT_LINE_SIZE];
 int tlen;
-char *segList[MAX_SEGMENTS];
+char segbuf[2 * INPUT_LINE_SIZE];	// セグメントの実体をここに詰め込む。
+char *segList[MAX_SEGMENTS];		// ここはsegbuf中へのポインタしかもたない。
 int segLenList[MAX_SEGMENTS];
 int segCount = 0;
 
@@ -56,10 +57,15 @@ void fillRestX()
 
 void readSegList()
 {
-	int i;
+	int i, len;
+	char *p = segbuf;
 	for(i = 0; i < MAX_SEGMENTS; i++){
+		segList[i] = p;
 		if(!fgets(segList[i], INPUT_LINE_SIZE, stdin)) break;
-		segList[i][strlen(segList[i]) - 1] = 0;
+		len = strlen(segList[i]) - 1;
+		segList[i][len] = 0;
+		//
+		p += len + 1;
 		segCount++;
 	}
 
@@ -75,10 +81,6 @@ void readSegList()
 int main_prg(int argc, char** argv)
 {
 	int i;
-	for(i = 0; i < MAX_SEGMENTS; i++){
-		segList[i] = malloc(INPUT_LINE_SIZE);
-		if(!segList[i]) return 1;
-	}
 	fgets(tbuf, INPUT_LINE_SIZE, stdin);
 	tlen = strlen(tbuf);
 	tlen--;
