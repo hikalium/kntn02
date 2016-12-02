@@ -13,10 +13,14 @@ $(PROG): $(OBJS)
 	$(CC) -o $(PROG) $^
 .c.o:
 	$(CC) $(CFLAGS) -c $<
+
+chk/chk:
+	make -C chk
+
 clean:
 	rm  $(OBJS) $(PROG)
 
-test:
+test: grpwk chk/chk
 	cd testmaker; make NUM=$(NUM)
 	./grpwk < $(TESTDATA)_in > out.txt
 	head -1 $(TESTDATA)_in > base.txt
