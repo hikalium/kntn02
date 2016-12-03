@@ -48,18 +48,18 @@ int find_seg_ofs(int segID)
 	int filledCountAtOfs = 0;
 	const int seglen = segLenList[segID];
 	//
-	fprintf(stderr, "S[%d] (%04X) = %s\n", segLenList[segID], segHeaderList[segID], segList[segID]);
+	fprintf(stderr, "S%04d[%d] (%04X) = %s\n", segID, segLenList[segID], segHeaderList[segID], segList[segID]);
 	//
 	for(i = 0; i < seglen; i++){
 		if(fixedStr[i]) filledCountAtOfs++;
 	}
 	for(i = 0; i < tlen; i++){
 		// すでに埋まっているところはスキップしよう!
-		if(filledCountAtOfs) continue;
+		//if(filledCountAtOfs) continue;
 		//
 		sc = check_match(i, segID);
 		if(sc > maxSameCount){
-			fprintf(stderr, "Update: %d / %d\n", sc, segLenList[segID]);
+			//fprintf(stderr, "Update: %d / %d\n", sc, segLenList[segID]);
 			maxSameCount = sc;
 			maxSameOfs = i;
 			//if(maxSameCount == segLenList[segID]) break;	// 完全一致しそうだしこれでしょ！
@@ -153,7 +153,9 @@ void readSegList()
 		}
 		segHeaderList[i] = head;
 	}
+	fprintf(stderr, "Given segs: %d\n", segCount);
 	segCount = i;	// 10文字以下は検査しても精度があがらないのでさようなら
+	fprintf(stderr, "Segs longer than 10: %d\n", segCount);
 }
 
 int main_prg(int argc, char** argv)
@@ -180,13 +182,16 @@ int main_prg(int argc, char** argv)
 		if(tbuf[i] == 'x') tbuf[i] = ' ';
 	}
 	fprintf(stderr, "T'      = |%s\n", tbuf);
-	fprintf(stderr, "Fixed T = |%s\n", fixedStr);
-	for(i = 0; i < segCount; i++){
-		fprintf(stderr, "S[%04d] = |", i);
-		for(k = 0; k < segFixedOfs[i]; k++){
-			fputc(' ', stderr);
+	
+	if(tlen <= 150){
+		fprintf(stderr, "Fixed T = |%s\n", fixedStr);
+		for(i = 0; i < segCount; i++){
+			fprintf(stderr, "S%04d   = |", i);
+			for(k = 0; k < segFixedOfs[i]; k++){
+				fputc(' ', stderr);
+			}
+			fprintf(stderr, "%s\n", segList[i]);
 		}
-		fprintf(stderr, "%s\n", segList[i]);
 	}
 	
 	
