@@ -8,9 +8,24 @@
 
 #define MIN_SEG_LEN		10
 
+typedef struct {
+	int ofs;
+	char *str;
+} Chunk;
+
 int seglen_cmp(const void *p, const void *q)
 {
 	return (strlen(*(const char **)q) - strlen(*(const char **)p));
+}
+
+int chunklen_cmp(const void *p, const void *q)
+{
+	int plen, qlen;
+	plen = strlen(((Chunk *)p)->str);
+	qlen = strlen(((Chunk *)q)->str);
+	if(plen == qlen) return strcmp(((Chunk *)p)->str, ((Chunk *)q)->str);
+	return (strlen(((Chunk *)q)->str) - strlen(((Chunk *)p)->str));
+	//return strcmp(((Chunk *)q)->str, ((Chunk *)p)->str);
 }
 
 char tbuf[INPUT_LINE_SIZE];
@@ -28,6 +43,10 @@ uint16_t tHeaderMaskList[INPUT_LINE_SIZE];	// xのところのみ0で、それ�
 
 int segFixedOfs[MAX_SEGMENTS];		// 該当するセグメントが配置されたオフセットを保存。-1に初期化される。
 
+char tChunkBuffer[INPUT_LINE_SIZE];	// segbuf的なもの。xを含まない連続部分を格納する。
+Chunk tChunkList[MAX_SEGMENTS];		// ここはtChunkBuffer中へのポインタしかもたない。
+int tChunkCount = 0;
+
 int check_match(int ofs, int segID)
 {
 	int i, lslen, seglen, same = 0;
@@ -38,6 +57,20 @@ int check_match(int ofs, int segID)
 	for(i = 0; i < seglen; i++){
 		if(longstr[i] == 'x' || longstr[i] == segList[segID][i]) same++;
 		else break;
+	}
+	return same;
+}
+
+int is_matched(int ofs, int segID)
+{
+	int i, lslen, seglen, same = 0;
+	const char *longstr = &tbuf[ofs];
+	lslen = tlen - ofs;
+	seglen = segLenList[segID];
+	if(seglen > lslen) return 0;
+	for(i = 0; i < seglen; i++){
+		if(longstr[i] == segList[segID][i]) same++;
+		else if(longstr[i] != 'x') return 0;
 	}
 	return same;
 }
@@ -89,11 +122,12 @@ void readT()
 {
 	int i;
 	uint16_t head, mask;
+	// 読み込み
 	fgets(tbuf, INPUT_LINE_SIZE, stdin);
 	tlen = strlen(tbuf);
 	tlen--;
 	tbuf[tlen] = 0;
-	//
+	// ヘッダ・マスク生成（未使用）
 	head = 0;
 	mask = 0;
 	for(i = 0; i < 8; i++){
@@ -118,10 +152,26 @@ void readT()
 		head |= 0;
 		mask |= tbuf[i] == 3;
 	}
+	// チャンク生成
+	strncpy(tChunkBuffer, tbuf, tlen);
+	int flg = 0;
+	for(i = 0; i < tlen; i++){
+		if(tChunkBuffer[i] == 'x'){
+			tChunkBuffer[i] = 0;
+			flg = 0;
+		} else{
+			if(!flg){
+				tChunkList[tChunkCount].ofs = i;
+				tChunkList[tChunkCount].str = &tChunkBuffer[i];
+				tChunkCount++;
+			}
+			flg = 1;
+		}
+	}
+	qsort(tChunkList, tChunkCount, sizeof(Chunk), chunklen_cmp);
 
+	// 以下はデバッグ用
 	fprintf(stderr, "T'[%d]=%s\n", tlen, tbuf);
-	//fprintf(stderr, "%04X\n", tHeaderMaskList[0]);
-	//fprintf(stderr, "%04X\n", tHeaderMaskList[1]);
 }
 
 void readSegList()
@@ -160,23 +210,43 @@ void readSegList()
 
 int main_prg(int argc, char** argv)
 {
-	int i;
+	int i, k;
 	
 	readT();
 	readSegList();
-
+	//
+	int cl, ofs;
+	char *p;
+	for(i = 0; i < tChunkCount; i++){
+		cl = strlen(tChunkList[i].str);
+		if(cl < 12) break;
+		fprintf(stderr, "Chunk%6d @ %6d %s\n", i, tChunkList[i].ofs, tChunkList[i].str);
+		for(k = 0; k < segCount; k++){
+			if(segLenList[k] < cl) break;
+			p = strstr(segList[k], tChunkList[i].str);
+			if(!p) continue;
+			ofs = p - segList[k];
+			ofs = tChunkList[i].ofs - ofs;
+			if(!is_matched(ofs, k)) continue;	// 置けないと確実にわかるなら弾く
+			fprintf(stderr, "\tS%04dd[%02d]+%02ld %2d = %s\n", i, segLenList[k], p - segList[k], is_matched(ofs, k), segList[k]);
+			
+			strncpy(&fixedStr[ofs], segList[k], segLenList[k]);
+			break;
+		}
+	}
+	/*
 	int ofs;
 	for(i = 0; i < segCount; i++){
-		//fprintf(stderr, "S%d[%lu] = %s\n", i, strlen(segs[i]), segs[i]);
 		ofs = find_seg_ofs(i);
 		segFixedOfs[i] = ofs;
 		strncpy(&fixedStr[ofs], segList[i], segLenList[i]);
 	}
+	*/
+	//
 	fillRestX();
-
 	printf("%s\n", fixedStr);
-
 	// 以下はデバッグ用。各セグメントがどう配置されたかを表示する。
+/*
 	int k;
 	for(i = 0; i < tlen; i++){
 		if(tbuf[i] == 'x') tbuf[i] = ' ';
@@ -193,7 +263,7 @@ int main_prg(int argc, char** argv)
 			fprintf(stderr, "%s\n", segList[i]);
 		}
 	}
-	
+*/	
 	
 
 	return 0;
