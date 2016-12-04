@@ -6,7 +6,7 @@
 #define INPUT_LINE_SIZE (500 * 1024)
 #define MAX_SEGMENTS	(50 * 1024)
 
-#define MIN_SEG_LEN		8
+#define MIN_SEG_LEN		8	// >= HEADER_CHARS
 
 #define HEADER_CHARS	8
 typedef uint16_t Header;
@@ -20,6 +20,7 @@ typedef struct {
 	int segID;
 	int candidates;
 	int level;
+	int triedOfs;
 } SegTag;
 
 int seglen_cmp(const void *p, const void *q)
@@ -44,6 +45,14 @@ int segFixedOfs[MAX_SEGMENTS];		// 該当するセグメントが配置された
 
 SegTag segDecisionList[MAX_SEGMENTS];
 
+int segtag_cmp(const void *p, const void *q)
+{
+	const SegTag *sp = p, *sq = q;
+	int d = sp->candidates - sq->candidates;
+	if(d) return d;
+	return (segLenList[sq->segID] - segLenList[sp->segID]);
+}
+
 int is_matched(int ofs, int segID)
 {
 	// segIDがofsに配置できるなら1を返す。矛盾する場合は0を返す。
@@ -61,48 +70,6 @@ void putSegAtOfs(int segID, int ofs)
 	segFixedOfs[segID] = ofs;
 	strncpy(&fixedStr[ofs], segList[segID], segLenList[segID]);
 	fprintf(stderr, "S%04d[%02d] -> Fixed %d\n", segID, segLenList[segID], ofs);
-}
-
-int fill03()
-{
-	// 配置しうるofsが一つしかないsegを配置してしまう。
-	int segID, ofs, i, fixCount = 0;
-	for(segID = 0; segID < segCount; segID++){
-		if(segLenList[segID] < 10) break;
-		if(segFixedOfs[segID] != -1) continue;	// すでにこのsegmentは配置されているのでチェックしない
-		fprintf(stderr, "S%04d[%d] = %s\n", segID, segLenList[segID], segList[segID]);
-		for(ofs = 0; ofs < tlen; ofs++){
-			if(fixedStr[ofs]) continue;	// すでに配置されているのでここにはおけない
-			if(is_matched(ofs, segID)){
-				fprintf(stderr, "f1@%d\n", ofs);
-				for(i = ofs + 1; i < tlen; i++){
-					if(fixedStr[i]) continue;	// すでに配置されているのでここにはおけない
-					if(is_matched(i, segID)){
-						fprintf(stderr, "f2@%d\n", i);
-						break;
-					}
-				}
-				if(i >= tlen){
-					// 1箇所しかない！絶対にここだ！
-					putSegAtOfs(segID, ofs);
-					fixCount++;
-				} else{
-					break;
-				}
-			}
-		}
-	}
-	return fixCount;
-}
-
-void fill03All()
-{
-	int fillCount = 1, count = 0;
-	while(fillCount){
-		count++;
-		fillCount = fill03();
-		fprintf(stderr, "Fixed segs(%d): %d\n", count, fillCount);
-	}
 }
 
 void fill04sub(int segID)
@@ -227,7 +194,7 @@ void readSegList()
 	}
 	fprintf(stderr, "Given segs: %d\n", segCount);
 	segCount = i;	// 10文字以下は検査しても精度があがらないのでさようなら
-	fprintf(stderr, "Segs longer than 10: %d\n", segCount);
+	fprintf(stderr, "Segs longer than %d: %d\n", MIN_SEG_LEN, segCount);
 }
 
 int get_num_of_seg_ofs_puttable(int segID)
@@ -292,15 +259,114 @@ void show_analytics()
 	fprintf(stderr, "fixed segs: %d / %d (%.6lf)\n", decided, segCount, (double)decided / segCount);
 }
 
+void updateDecisionList()
+{
+	int i, p;
+	for(i = 0; i < segCount; i++){
+		if(segDecisionList[i].level == -1) break;
+	}
+	p = i;
+	for(; i < segCount; i++){
+		// 未配置のセグメントについて、配置可能な位置の個数を更新する
+		segDecisionList[i].candidates = get_num_of_seg_ofs_puttable(segDecisionList[i].segID);
+	}
+	// 更新した候補数にしたがってソートする
+	qsort(&segDecisionList[p], segCount - p, sizeof(SegTag), segtag_cmp);
+}
+
+void initDecisionList()
+{
+	int i;
+	for(i = 0; i < segCount; i++){
+		segDecisionList[i].segID = i;
+		segDecisionList[i].level = -1;
+		segDecisionList[i].triedOfs = 0;
+	}
+	updateDecisionList();
+}
+
+void showDecisionList()
+{
+	int i;	
+	fprintf(stderr, "DecisionList: \n");
+	for(i = 0; i < segCount; i++){
+		fprintf(stderr, "SDL[%04d]: c:%3d lv:(%3d) %s\n",
+			i,
+			segDecisionList[i].candidates,
+			segDecisionList[i].level,
+			segList[segDecisionList[i].segID]
+		);
+	}
+	
+}
+
+int putDecidedSeg(int currentLevel)
+{
+	// 配置しうるofsが一つしかないsegを配置してしまう。
+	// もし矛盾するものがあった場合は-1を返す
+	int i, segID, fixCount = 0, ofs;
+	for(i = 0; i < segCount; i++){
+		if(segDecisionList[i].candidates != 0) break;	// すでに配置済みのsegを飛ばす
+	}
+	for(; i < segCount; i++){
+		if(segDecisionList[i].candidates != 1) break;	// 候補数順にソートされているので、1でなくなったら終了
+		segDecisionList[i].candidates = 0;	// これから配置するので候補を0にする
+		segDecisionList[i].level = currentLevel;
+		segID = segDecisionList[i].segID;
+		fprintf(stderr, "S%04d[%d] = %s\n", segID, segLenList[segID], segList[segID]);
+		for(ofs = 0; ofs < tlen; ofs++){
+			if(fixedStr[ofs]) continue;	// すでに配置されているのでここにはおけない
+			if(is_matched(ofs, segID)){
+				if(fixedStr[ofs]) return -1;	// すでに配置されている場所に配置しようとした。矛盾だ。
+				// 次における場所はここみたいだ。ここに配置しよう。
+				putSegAtOfs(segID, ofs);
+				fixCount++;
+				break;
+			}
+		}
+		if(ofs >= tlen) return -1;	// 次の候補が見つからなかった。矛盾だ。
+	}
+	fprintf(stderr, "%d segs fixed.\n", fixCount);
+	return fixCount;
+}
+/*
+void fill03All()
+{
+	int fillCount = 1, count = 0;
+	while(fillCount){
+		count++;
+		fillCount = fill03();
+		fprintf(stderr, "Fixed segs(%d): %d\n", count, fillCount);
+	}
+}
+*/
 int main_prg(int argc, char** argv)
 {
 	// 読み込み
 	readT();
 	readSegList();
 
+	//
+	initDecisionList();
+	showDecisionList();
+
 	// 処理
-	fill03All();	// 確実に位置がわかるものをすべて配置する
-	show_seg_ofs_puttable();
+	int fixCount, lv = 0;
+	for(;;){
+		for(;;){
+			fixCount = putDecidedSeg(lv);
+			if(fixCount == -1){
+				fprintf(stderr, "Conflict detected\n");
+				break;
+			}
+			updateDecisionList();
+			showDecisionList();
+			if(fixCount == 0) break;
+		}
+		lv++;
+		break;
+	}
+
 
 	// 後処理
 	fillRestX();	// 埋められなかった部分をなんとかする
