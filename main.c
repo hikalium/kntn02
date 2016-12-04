@@ -16,19 +16,15 @@ typedef struct {
 	char *str;
 } Chunk;
 
+typedef struct {
+	int segID;
+	int candidates;
+	int level;
+} SegTag;
+
 int seglen_cmp(const void *p, const void *q)
 {
 	return (strlen(*(const char **)q) - strlen(*(const char **)p));
-}
-
-int chunklen_cmp(const void *p, const void *q)
-{
-	int plen, qlen;
-	plen = strlen(((Chunk *)p)->str);
-	qlen = strlen(((Chunk *)q)->str);
-	if(plen == qlen) return strcmp(((Chunk *)p)->str, ((Chunk *)q)->str);
-	return (strlen(((Chunk *)q)->str) - strlen(((Chunk *)p)->str));
-	//return strcmp(((Chunk *)q)->str, ((Chunk *)p)->str);
 }
 
 char tbuf[INPUT_LINE_SIZE];
@@ -46,24 +42,8 @@ Header tHeaderMaskList[INPUT_LINE_SIZE];	// xのところのみ0で、それ以�
 
 int segFixedOfs[MAX_SEGMENTS];		// 該当するセグメントが配置されたオフセットを保存。-1に初期化される。
 
-char tChunkBuffer[INPUT_LINE_SIZE];	// segbuf的なもの。xを含まない連続部分を格納する。
-Chunk tChunkList[MAX_SEGMENTS];		// ここはtChunkBuffer中へのポインタしかもたない。
-int tChunkCount = 0;
-/*
-int check_match(int ofs, int segID)
-{
-	int i, lslen, seglen, same = 0;
-	const char *longstr = &tbuf[ofs];
-	lslen = tlen - ofs;
-	seglen = segLenList[segID];
-	if(seglen > lslen) return 0;
-	for(i = 0; i < seglen; i++){
-		if(longstr[i] == 'x' || longstr[i] == segList[segID][i]) same++;
-		else break;
-	}
-	return same;
-}
-*/
+SegTag segDecisionList[MAX_SEGMENTS];
+
 int is_matched(int ofs, int segID)
 {
 	// segIDがofsに配置できるなら1を返す。矛盾する場合は0を返す。
@@ -75,85 +55,20 @@ int is_matched(int ofs, int segID)
 	}
 	return 1;
 }
-/*
-int find_seg_ofs(int segID)
-{
-	int maxSameCount = 0, maxSameOfs = -1, sc, i;
-	int filledCountAtOfs = 0;
-	const int seglen = segLenList[segID];
-	//
-	fprintf(stderr, "S%04d[%d] (%04X) = %s\n", segID, segLenList[segID], segHeaderList[segID], segList[segID]);
-	//
-	for(i = 0; i < seglen; i++){
-		if(fixedStr[i]) filledCountAtOfs++;
-	}
-	for(i = 0; i < tlen; i++){
-		// すでに埋まっているところはスキップしよう!
-		if(filledCountAtOfs) continue;
-		//
-		sc = check_match(i, segID);
-		if(sc > maxSameCount){
-			//fprintf(stderr, "Update: %d / %d\n", sc, segLenList[segID]);
-			maxSameCount = sc;
-			maxSameOfs = i;
-			//if(maxSameCount == segLenList[segID]) break;	// 完全一致しそうだしこれでしょ！
-			//fprintf(stderr, "Update: ofs = %d (cnt = %d / %lu)\n", maxSameOfs, maxSameCount, strlen(seg));
-		}
-		//
-		if(fixedStr[i]) filledCountAtOfs--;	// 次のセグメント範囲内にある、埋まっている文字は1個減る
-		if(fixedStr[i + seglen]) filledCountAtOfs++; // 次のセグメント範囲内にある、埋まっている文字は1個減る
-	}
-	return maxSameOfs;
-}
-*/
+
 void putSegAtOfs(int segID, int ofs)
 {
 	segFixedOfs[segID] = ofs;
 	strncpy(&fixedStr[ofs], segList[segID], segLenList[segID]);
 	fprintf(stderr, "S%04d[%02d] -> Fixed %d\n", segID, segLenList[segID], ofs);
 }
-/*
-void fill00()
-{
-	int i, ofs;
-	for(i = 0; i < segCount; i++){
-		ofs = find_seg_ofs(i);
-		segFixedOfs[i] = ofs;
-		putSegAtOfs(i, ofs);
-	}
-}
-
-void fill01()
-{
-	int i, k;
-	int cl, ofs;
-	char *p;
-	for(i = 0; i < tChunkCount; i++){
-		cl = strlen(tChunkList[i].str);
-		if(cl < 12) break;
-		fprintf(stderr, "Chunk%6d @ %6d %s\n", i, tChunkList[i].ofs, tChunkList[i].str);
-		for(k = 0; k < segCount; k++){
-			if(segLenList[k] < cl) break;
-			p = strstr(segList[k], tChunkList[i].str);
-			if(!p) continue;
-			ofs = p - segList[k];
-			ofs = tChunkList[i].ofs - ofs;
-			if(!is_matched(ofs, k)) continue;	// 置けないと確実にわかるなら弾く
-			fprintf(stderr, "\tS%04dd[%02d]+%02ld %2d = %s\n", i, segLenList[k], p - segList[k], is_matched(ofs, k), segList[k]);
-			
-			putSegAtOfs(k, ofs);
-			break;
-		}
-	}
-}
-*/
 
 int fill03()
 {
 	// 配置しうるofsが一つしかないsegを配置してしまう。
 	int segID, ofs, i, fixCount = 0;
 	for(segID = 0; segID < segCount; segID++){
-		//if(segLenList[segID] < 10) break;
+		if(segLenList[segID] < 10) break;
 		if(segFixedOfs[segID] != -1) continue;	// すでにこのsegmentは配置されているのでチェックしない
 		fprintf(stderr, "S%04d[%d] = %s\n", segID, segLenList[segID], segList[segID]);
 		for(ofs = 0; ofs < tlen; ofs++){
@@ -264,23 +179,6 @@ void readT()
 		head |= 0;
 		mask |= 3;
 	}
-	// チャンク生成
-	strncpy(tChunkBuffer, tbuf, tlen);
-	int flg = 0;
-	for(i = 0; i < tlen; i++){
-		if(tChunkBuffer[i] == 'x'){
-			tChunkBuffer[i] = 0;
-			flg = 0;
-		} else{
-			if(!flg){
-				tChunkList[tChunkCount].ofs = i;
-				tChunkList[tChunkCount].str = &tChunkBuffer[i];
-				tChunkCount++;
-			}
-			flg = 1;
-		}
-	}
-	qsort(tChunkList, tChunkCount, sizeof(Chunk), chunklen_cmp);
 
 	// 以下はデバッグ用
 	fprintf(stderr, "T'[%d]=%s\n", tlen, tbuf);
@@ -347,12 +245,13 @@ int get_num_of_seg_ofs_puttable(int segID)
 }
 void show_seg_ofs_puttable()
 {
-	int segID, ofs;
+	int segID;
 	fprintf(stderr, "Puttable ofs:\n");
 	for(segID = 0; segID < segCount; segID++){
 		if(segFixedOfs[segID] != -1) continue;	// すでにこのsegmentは配置されているのでチェックしない
 		fprintf(stderr, "S%04d[%d] (%04X): %d = %s\n", segID, segLenList[segID], segHeaderList[segID], get_num_of_seg_ofs_puttable(segID), segList[segID]);
 /*
+		int ofs;
 		for(ofs = 0; ofs < tlen; ofs++){
 			if(fixedStr[ofs]) continue;	// すでに配置されているのでここにはおけない
 			if(is_matched(ofs, segID)){
