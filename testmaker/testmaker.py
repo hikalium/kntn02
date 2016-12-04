@@ -2,7 +2,7 @@ def splitter():
 	return 1+int(random.expovariate(0.1))
 import random
 def main():
-	xrate=0.44
+	xrate=0.4444
 	x=input("Enter # of characters :")
 	test1=""
 	for i in range(x):
