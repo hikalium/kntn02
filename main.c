@@ -8,14 +8,12 @@
 #define MAX_CANDIDATE_OFFSETS	(128 * 1024 * 1024)
 #define MIN_SEG_LEN		8
 
-#define INDEX_BUF_SIZE	(10 * INPUT_LINE_SIZE)
+#define INDEX_BUF_SIZE	(20 * INPUT_LINE_SIZE)
 
 
 typedef struct {
 	int segID;
 	int candidates;
-	int level;
-	int triedOfs;
 	int *candidateOfsList;	// -1: 終端
 } SegTag;
 
@@ -69,7 +67,7 @@ void putSegAtOfs(int segID, int ofs)
 {
 	segFixedOfs[segID] = ofs;
 	strncpy(&fixedStr[ofs], segList[segID], segLenList[segID]);
-	fprintf(stderr, "S%04d[%02d] -> Fixed %d\n", segID, segLenList[segID], ofs);
+	//fprintf(stderr, "S%04d[%02d] -> Fixed %d\n", segID, segLenList[segID], ofs);
 }
 
 void fillRestX()
@@ -86,7 +84,11 @@ void fillRestX()
 }
 
 #define GET_KEY(s)	((s[0] - 'a') + (s[1] - 'a') * 3 + (s[2] - 'a') * 9)
-#define IS_KEY_OFS(s, i, k) ((s[i] == 'x' || s[i] - 'a' == k % 3) && (s[i + 1] == 'x' || s[i + 1] - 'a' == (k / 3)%3) && (s[i + 2] == 'x' || s[i + 2] - 'a' == k/9))
+#define IS_KEY_OFS(s, i, k) ( \
+	(s[i] == 'x' || s[i] - 'a' == k % 3) && \
+	(s[i + 1] == 'x' || s[i + 1] - 'a' == (k / 3)%3) && \
+	(s[i + 2] == 'x' || s[i + 2] - 'a' == k/9) \
+)
 #define INDEX_CHARS	3
 void generateIndex()
 {
@@ -211,8 +213,8 @@ void show_analytics()
 void updateDecisionList()
 {
 	int i, p;
-	for(i = 0; i < segCount; i++){
-		if(segDecisionList[i]->level == -1) break;
+	for(i = 0; i < segCount; i++){	// 配置済みのセグメントはソートしなくていいよね？飛ばすよ。
+		if(segDecisionList[i]->candidates != 0) break;
 	}
 	p = i;
 	for(; i < segCount; i++){
@@ -232,8 +234,6 @@ void initDecisionList()
 		segDecisionList[i] = &segDecisionListBuf[i];
 		segTagMap[i] = segDecisionList[i];
 		segDecisionList[i]->segID = i;
-		segDecisionList[i]->level = -1;
-		segDecisionList[i]->triedOfs = 0;
 		// 初期時点における配置可能ofsのリストを作成
 		segDecisionList[i]->candidateOfsList = &candidateOfsBuf[candidateOfsBufCount];
 		ci = 0;
@@ -256,10 +256,9 @@ void showDecisionList()
 	int i;	
 	fprintf(stderr, "DecisionList: \n");
 	for(i = 0; i < segCount; i++){
-		fprintf(stderr, "SDL[%04d]: c:%3d lv:(%3d) %s\n",
+		fprintf(stderr, "SDL[%04d]: c:%3d %s\n",
 			i,
 			segDecisionList[i]->candidates,
-			segDecisionList[i]->level,
 			segList[segDecisionList[i]->segID]
 		);
 		/*
@@ -273,7 +272,7 @@ void showDecisionList()
 	
 }
 
-int putDecidedSeg(int currentLevel)
+int putDecidedSeg()
 {
 	// 配置しうるofsが一つしかないsegを配置してしまう。
 	// もし矛盾するものがあった場合は-1を返す
@@ -286,7 +285,6 @@ int putDecidedSeg(int currentLevel)
 		if(segDecisionList[i]->candidates != 1) break;	// 候補数順にソートされているので、1でなくなったら終了
 		st = segDecisionList[i];
 		st->candidates = 0;	// これから配置するので候補を0にする
-		st->level = currentLevel;
 		segID = st->segID;
 		fprintf(stderr, "S%04d[%d] = %s\n", segID, segLenList[segID], segList[segID]);
 		for(k = 0; st->candidateOfsList[k] != -1; k++){
@@ -305,11 +303,11 @@ int putDecidedSeg(int currentLevel)
 	return fixCount;
 }
 
-void putAllDecidedSeg(int currentLevel)
+void putAllDecidedSeg()
 {
 	int fixCount;
 	for(;;){
-		fixCount = putDecidedSeg(currentLevel);
+		fixCount = putDecidedSeg();
 		if(fixCount == -1){
 			fprintf(stderr, "Conflict detected\n");
 			exit(EXIT_FAILURE);
@@ -377,6 +375,22 @@ void fill_nkgwer()
 	}
 }
 
+char fixedStrStack[INPUT_LINE_SIZE];
+void pushFixedStr()
+{
+	// 現在のfixedStrを保存しておく
+	memcpy(fixedStrStack, fixedStr, tlen);
+}
+
+void popFixedStr()
+{
+	// 以前のfixedStrで現在のfixedStrを上書きする。前回未決定の部分はそのまま残す。
+	int i;
+	for(i = 0; i < tlen; i++){
+		if(fixedStrStack[i]) fixedStr[i] = fixedStrStack[i];
+	}
+}
+
 int main_prg(int argc, char** argv)
 {
 	// 読み込み
@@ -388,8 +402,12 @@ int main_prg(int argc, char** argv)
 	showDecisionList();
 
 	// 処理
-	putAllDecidedSeg(0);
+	putAllDecidedSeg();	// 確定しているセグメントを埋める
+
+	pushFixedStr();	
 	fill_nkgwer();
+	pushFixedStr();
+
 	// 後処理
 	fillRestX();	// 埋められなかった部分をなんとかする
 	// 結果出力
