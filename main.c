@@ -63,8 +63,7 @@ int is_matched(int ofs, int segID)
 	// segIDがofsに配置できるなら1を返す。矛盾する場合は0を返す。
 	int i;
 	const char *longstr = &tbuf[ofs];
-	if((segHeaderList[segID] & tHeaderMaskList[ofs]) != tHeaderList[ofs]) return 0;	// 最初の数文字（ヘッダ）を見て判断
-	for(i = HEADER_CHARS; i < segLenList[segID]; i++){	// ヘッダ分はすでに一致するとわかっているのでとばす
+	for(i = 0; i < segLenList[segID]; i++){	// ヘッダ分はすでに一致するとわかっているのでとばす
 		if(longstr[i] != segList[segID][i] && longstr[i] != 'x') return 0;
 	}
 	return 1;
@@ -75,29 +74,6 @@ void putSegAtOfs(int segID, int ofs)
 	segFixedOfs[segID] = ofs;
 	strncpy(&fixedStr[ofs], segList[segID], segLenList[segID]);
 	fprintf(stderr, "S%04d[%02d] -> Fixed %d\n", segID, segLenList[segID], ofs);
-}
-
-void fill04sub(int segID)
-{
-	int i;
-	fprintf(stderr, "S[%d] = %s\n", segLenList[segID], segList[segID]);
-	for(i = 0; i < tlen; i++){
-		if(is_matched( i, segID)){
-			putSegAtOfs(segID, i);
-			//i=i+segLenList[segID];
-			if(segLenList[segID] > 40) return;
-		}
-	}
-}
-
-void fill04()
-{
-	// from nkgw, https://kntn.slack.com/files/nkgwer/F3ACSU8BX/main_c.c
-	int i;
-	for(i = segCount; i > 0; i--)
-	{
-		fill04sub(i);
-	}
 }
 
 void fillRestX()
@@ -193,12 +169,12 @@ void readSegList()
 		head = 0;
 		for(k = 0; k < HEADER_CHARS; k++){
 			head <<= 2;
-			head |= segList[i][k] - 'a' + 1;	// a: 01, b: 10, c: 11, x: 00
+			head |= segList[i][k] - 'a' + 1;	// a: 01, b: 10, c: 11
 		}
 		segHeaderList[i] = head;
 	}
 	fprintf(stderr, "Given segs: %d\n", segCount);
-	segCount = i;	// 10文字以下は検査しても精度があがらないのでさようなら
+	segCount = i;	// MIN_SEG_LEN文字以下は検査しても精度があがらないのでさようなら
 	fprintf(stderr, "Segs longer than %d: %d\n", MIN_SEG_LEN, segCount);
 }
 
@@ -207,7 +183,7 @@ int get_num_of_seg_ofs_puttable(SegTag *st)
 	// すでに配置されているなら-1を返す
 	int k, count = 0;
 	if(segFixedOfs[st->segID] != -1) return -1;	// すでにこのsegmentは配置されているのでチェックしない
-	for(k = 0; segDecisionList[k]->candidateOfsList[k] != -1; k++){
+	for(k = 0; st->candidateOfsList[k] != -1; k++){
 		if(is_matched(st->candidateOfsList[k], st->segID)){
 			count++;
 		}
@@ -232,14 +208,12 @@ void show_analytics()
 			continue;
 		}
 		decided++;
-		fprintf(stderr, "S%04d   = |", i);
 		if(tlen <= 150){
+			fprintf(stderr, "S%04d   = |", i);
 			for(k = 0; k < segFixedOfs[i]; k++){
 				fputc(' ', stderr);
 			}
 			fprintf(stderr, "%s\n", segList[i]);
-		} else{
-			fprintf(stderr, "%d\n", segFixedOfs[i]);
 		}
 	}
 	fprintf(stderr, "fixed segs: %d / %d (%.6lf)\n", decided, segCount, (double)decided / segCount);
@@ -326,10 +300,10 @@ int putDecidedSeg(int currentLevel)
 			ofs = st->candidateOfsList[k];
 			if(fixedStr[ofs]) continue;	// すでに配置されているのでここにはおけない
 			if(is_matched(ofs, segID)){
-					// 次における場所はここみたいだ。ここに配置しよう。
-					putSegAtOfs(segID, ofs);
-					fixCount++;
-					break;
+				// 次における場所はここみたいだ。ここに配置しよう。
+				putSegAtOfs(segID, ofs);
+				fixCount++;
+				break;
 			}
 		}
 		if(st->candidateOfsList[k] == -1) return -1;	// 次の候補が見つからなかった。矛盾だ。
@@ -390,14 +364,50 @@ int putNextCandidate(int currentLevel)
 	return 0;
 }
 /*
-void fill03All()
+void fill_nkgwer_sub(int segID)
 {
-	int fillCount = 1, count = 0;
-	while(fillCount){
-		count++;
-		fillCount = fill03();
-		fprintf(stderr, "Fixed segs(%d): %d\n", count, fillCount);
-	}
+    int check, i,lslen, seglen,j;
+    fprintf(stderr, "S[%d] = %s\n", segLenList[segID], segList[segID]);
+    for(i = 0; i < tlen; i++)
+    {
+        check=1;
+        const char *longstr = &tbuf[i];
+        lslen = tlen - i;
+        seglen = segLenList[segID];
+        if(seglen > lslen) continue;
+        for(j = 0; j < seglen; j++)
+        {
+            if(!(longstr[j] == 'x' || longstr[j] == segList[segID][j]))
+            {
+                check=0;
+                break;
+
+            }
+        }
+        if(check)
+        {
+			putSegAtOfs(segID, i);
+            if(seglen>40)
+            {
+                fprintf(stderr, "%s\n","0ver 40");
+                return;
+            }
+
+        }
+    }
+}
+
+void fill_nkgwer()
+{
+	// nkgwer's algorithm
+   	int i = 0;
+   	while(segLenList[i]>4){//begin from 5
+   		i++;
+   	}
+    for(; i > 0; i--)
+    {
+        if(segFixedOfs[i] != -1) fill_nkgwer(i);
+    }
 }
 */
 int main_prg(int argc, char** argv)
@@ -414,13 +424,14 @@ int main_prg(int argc, char** argv)
 	int lv = 0;
 	putAllDecidedSeg(lv);
 	lv++;
+/*
 	for(;;){
 		if(putNextCandidate(lv) == -1){	// 次の候補位置に配置してみる
 			// もう候補がないので終了
 			break;
 		}
 		updateDecisionList();
-		showDecisionList();
+		//showDecisionList();
 		if(isConflicted()){		// その位置が矛盾しないかチェック
 			fprintf(stderr, "Conflicted.\n");
 			break;
@@ -428,8 +439,8 @@ int main_prg(int argc, char** argv)
 		putAllDecidedSeg(lv);
 		lv++;
 	}
-
-
+*/
+	//fill_nkgwer();
 	// 後処理
 	fillRestX();	// 埋められなかった部分をなんとかする
 	// 結果出力
