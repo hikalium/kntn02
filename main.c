@@ -27,7 +27,7 @@ int seglen_cmp(const void *p, const void *q)
 char tbuf[INPUT_LINE_SIZE];
 int tlen;
 char segbuf[2 * INPUT_LINE_SIZE];	// セグメントの実体をここに詰め込む。
-char *segList[MAX_SEGMENTS];		// ここはsegbuf中へのポインタしかもたない。
+char *segList[MAX_SEGMENTS];		// ここはsegbuf中へのポインタしかもたない。この添え字をsegIDとする。
 int segLenList[MAX_SEGMENTS];
 int segCount = 0;
 
@@ -35,8 +35,9 @@ char fixedStr[INPUT_LINE_SIZE];		// 修正後の文字列が入る。初めは0�
 
 int segFixedOfs[MAX_SEGMENTS];		// 該当するセグメントが配置されたオフセットを保存。-1に初期化される。
 
-SegTag segDecisionListBuf[MAX_SEGMENTS];
-SegTag* segDecisionList[MAX_SEGMENTS];
+SegTag segDecisionListBuf[MAX_SEGMENTS];	// この配列の添え字はsegIDではない！！！
+SegTag* segDecisionList[MAX_SEGMENTS];		// この配列の添え字はsegIDではない！！！
+SegTag* segTagMap[MAX_SEGMENTS];			// この配列の添え字はsegIDです。
 
 int candidateOfsBuf[MAX_CANDIDATE_OFFSETS];
 int candidateOfsBufCount = 0;
@@ -229,6 +230,7 @@ void initDecisionList()
 	fprintf(stderr, "Generating DecisionList ...\n");
 	for(i = 0; i < segCount; i++){
 		segDecisionList[i] = &segDecisionListBuf[i];
+		segTagMap[i] = segDecisionList[i];
 		segDecisionList[i]->segID = i;
 		segDecisionList[i]->level = -1;
 		segDecisionList[i]->triedOfs = 0;
@@ -317,7 +319,7 @@ void putAllDecidedSeg(int currentLevel)
 		if(fixCount == 0) break;
 	}
 }
-
+/*
 void fill_nkgwer_sub(int segID)
 {
 	// nkgwer's algorithm
@@ -334,6 +336,36 @@ void fill_nkgwer_sub(int segID)
 			}
 		}
 	}
+}
+*/
+void fill_nkgwer_sub(int segID)
+{
+	// nkgwer's algorithm
+	int k, ofs;
+	SegTag *st = segTagMap[segID];
+	fprintf(stderr, "nkgwer:S[%d] = %s\n", segLenList[segID], segList[segID]);
+
+	for(k = 0; st->candidateOfsList[k] != -1; k++){
+		ofs = st->candidateOfsList[k];
+		putSegAtOfs(segID, ofs);
+		if(segLenList[segID] > 40){
+			fprintf(stderr, "%s\n","0ver 40");
+			return;
+		}
+	}
+/*
+
+	for(ofs = 0; ofs < tlen; ofs++){
+		if(seglen > (tlen - ofs)) continue;
+		if(is_matched(ofs, segID)){
+			putSegAtOfs(segID, ofs);
+			if(seglen > 40){
+				fprintf(stderr, "%s\n","0ver 40");
+				return;
+			}
+		}
+	}
+*/	
 }
 
 void fill_nkgwer()
