@@ -1,6 +1,6 @@
-def splitter():
-	return 1+int(random.expovariate(0.1))
 import random
+def splitter():
+	return 1+int(random.expovariate(1/10.0))
 def main():
 	xrate=0.44
 	x=input("Enter # of characters :")
