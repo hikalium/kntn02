@@ -62,7 +62,7 @@ void readT()
 	givenData.tStr[givenData.tLen] = 0;	// 末尾の改行文字を除去
 
 	// 以下はデバッグ用
-	fprintf(stderr, "T'[%d]=%s\n", givenData.tLen, givenData.tStr);
+	//fprintf(stderr, "T'[%d]=%s\n", givenData.tLen, givenData.tStr);
 }
 
 void readSegList()
@@ -117,9 +117,12 @@ void readSegList()
 int seg_cmp_cc(const void *p, const void *q)
 {
 	const Segment *sp = *(const Segment **)p, *sq = *(const Segment **)q;
+	return sp->candidates - sq->candidates;
+/*
 	int d = sp->candidates - sq->candidates;
 	if(d) return d;
 	return (sq->len - sp->len);
+*/
 }
 
 
@@ -157,29 +160,29 @@ void fillRestX(char *fixedStr)
 	}
 }
 
-void updateSegCandidateCount(Segment *s)
-{
-	// すでに配置されているなら-1を返す
-	int k, count = 0;
-	if(s->candidates == -1) return ;	// すでにこのsegmentは配置されているのでチェックしない
-	for(k = 0; s->baseCandidateList[k] != -1; k++){
-		if(is_matched(s->baseCandidateList[k], s)){
-			count++;
-		}
-	}
-	s->candidates = count;
-	return;
-
-}
-
 void updateDecisionList()
 {
-	int i;
+	int i, k, count, *clist;
+	Segment *s;
+	fprintf(stderr, "Updating ...\n");
 	for(i = fixedIndexInSegListCC; i < givenData.segCount; i++){
 		// 未配置のセグメントについて、配置可能な位置の個数を更新する
-		updateSegCandidateCount(segListSortedByCC[i]);
+		s = segListSortedByCC[i];
+		if(s->candidates == -1){
+			fixedIndexInSegListCC++;
+			continue;	// すでにこのsegmentは配置されているのでチェックしない
+		}
+		clist = s->baseCandidateList;
+		count = 0;
+		for(k = 0; clist[k] != -1; k++){
+			if(is_empty(clist[k], s)){	// すでにT'パターンにあうことはわかっているので、重ならないかだけチェックすればよい（高速化）
+				count++;
+			}
+		}
+		s->candidates = count;
 	}
 	// 更新した候補数にしたがってソートする
+	fprintf(stderr, "Sorting ...\n");
 	qsort(segListSortedByCC, givenData.segCount - fixedIndexInSegListCC, sizeof(Segment *), seg_cmp_cc);
 }
 
