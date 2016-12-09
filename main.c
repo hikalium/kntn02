@@ -185,7 +185,7 @@ void updateDecisionList()
 		s->candidates = count;
 	}
 	// 更新した候補数にしたがってソートする
-	fprintf(stderr, "Sorting ...\n");
+	fprintf(stderr, "Sorting...\n");
 	qsort(segListSortedByCC, givenData.segCount - fixedIndexInSegListCC, sizeof(Segment *), seg_cmp_cc);
 }
 
@@ -194,7 +194,7 @@ void initCandidateList()
 	int i, ofs, ci, k;
 	const int *indexPage;
 	Segment *s;
-	fprintf(stderr, "Generating CandidateList ...\n");
+	fprintf(stderr, "Generating candidateList...\n");
 	for(i = 0; i < 3; i++){
 		// candidateOfsList1を生成（最初の1文字の挿入可能性）
 		ci = 0;
@@ -246,10 +246,10 @@ int putDecidedSeg()
 		if(segListSortedByCC[i]->candidates != 1) break;	// 候補数順にソートされているので、1でなくなったら終了
 		s = segListSortedByCC[i];
 		s->candidates = -1;	// 配置済みなら-1
-		fprintf(stderr, "S[%d] = %s\n", s->len, s->str);
+		//fprintf(stderr, "S[%d] = %s\n", s->len, s->str);
 		for(k = 0; s->baseCandidateList[k] != -1; k++){
 			ofs = s->baseCandidateList[k];
-			if(!is_empty(ofs, s)) continue;
+			if(ofs == -2 || !is_empty(ofs, s)) continue;
 			// おける場所はここみたいだ。ここに配置しよう。
 			putSegAtOfs(s, ofs);
 			fixCount++;
@@ -275,12 +275,12 @@ void putAllDecidedSeg()
 {
 	int fixCount;
 	for(;;){
+		//printSegListSortedByCC();
 		fixCount = putDecidedSeg();
 		if(fixCount == -1){
 			fprintf(stderr, "Conflict detected\n");
 			exit(EXIT_FAILURE);
 		}
-		printSegListSortedByCC();
 		updateDecisionList();
 		if(fixCount == 0) break;
 	}
@@ -290,11 +290,12 @@ void fillFuzzy()
 {
 	int i, k, ofs;
 	Segment *s;
+	fprintf(stderr, "Filling fuzzy...\n");
 	for(i = givenData.segCount - 1; i >= 0; i--){
 		s = givenData.segList[i];
 		//s = segListSortedByCC[i];
 		if(s->candidates == -1) continue;	// すでに配置されているセグメントに関しては検討しない
-		fprintf(stderr, "FUZZY: S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
+		//fprintf(stderr, "FUZZY: S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
 		for(k = 0; s->baseCandidateList[k] != -1; k++){
 			ofs = s->baseCandidateList[k];
 			if(ofs == -2) continue;	// おけないとすでに判明している（確実に配置するフェーズの段階で）
@@ -304,7 +305,6 @@ void fillFuzzy()
 		}
 	}
 }
-
 void printSegList()
 {
 	int i;
@@ -327,7 +327,7 @@ int main_prg(int argc, char** argv)
 	//printSegListSortedByCC();
 	putAllDecidedSeg();
 	fillFuzzy();
-	fillRestX(fixedStr);	// 埋められなかった部分をなんとかする
+	fillRestX(fixedStr);	//埋められなかった部分をなんとかする
 	// 結果出力
 	printf("%s\n", fixedStr);
 	return 0;
