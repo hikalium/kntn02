@@ -175,8 +175,11 @@ void updateDecisionList()
 		clist = s->baseCandidateList;
 		count = 0;
 		for(k = 0; clist[k] != -1; k++){
+			if(clist[k] == -2) continue;	// 配置不能とすでにわかっている位置は飛ばす
 			if(is_empty(clist[k], s)){	// すでにT'パターンにあうことはわかっているので、重ならないかだけチェックすればよい（高速化）
 				count++;
+			} else{
+				clist[k] = -2;	// 配置不能とマークする
 			}
 		}
 		s->candidates = count;
@@ -287,19 +290,17 @@ void fillFuzzy()
 {
 	int i, k, ofs;
 	Segment *s;
-	for(i = 0; i < givenData.segCount; i++){
-		//s = givenData.segList[i];
-		s = segListSortedByCC[i];
-		if(s->candidates == -1) continue;
+	for(i = givenData.segCount - 1; i >= 0; i--){
+		s = givenData.segList[i];
+		//s = segListSortedByCC[i];
+		if(s->candidates == -1) continue;	// すでに配置されているセグメントに関しては検討しない
 		fprintf(stderr, "FUZZY: S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
 		for(k = 0; s->baseCandidateList[k] != -1; k++){
 			ofs = s->baseCandidateList[k];
-			if(is_empty(ofs, s)){
-				// 次における場所はここみたいだ。ここに配置しよう。
-				fprintf(stderr, "%d\n", ofs);
-				putSegAtOfs(s, ofs);
-				break;
-			}
+			if(ofs == -2) continue;	// おけないとすでに判明している（確実に配置するフェーズの段階で）
+			// とにかくおける場所を埋めてゆく
+			//fprintf(stderr, "%d\n", ofs);
+			putSegAtOfs(s, ofs);
 		}
 	}
 }
