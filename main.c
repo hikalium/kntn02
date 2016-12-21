@@ -40,11 +40,95 @@ Segment *segListSortedByCC[MAX_SEGMENTS];	// CandidateCountの昇順にソート
 Segment *segListSortedByAlphabetical[MAX_SEGMENTS];	// 辞書順にソート。
 int fixedIndexInSegListCC;
 
+//
+// 配置
+//
+
 char fixedStr[INPUT_LINE_SIZE];		// 修正後の文字列が入る。初めは0初期化されている。
 void putSegAtOfs(Segment *s, int ofs)
 {
 	strncpy(&fixedStr[ofs], s->str, s->len);
 	//fprintf(stderr, "S%04d[%02d] -> Fixed %d\n", segID, segLenList[segID], ofs);
+}
+
+//
+// デバッグ出力
+//
+
+void printSegList()
+{
+	int i;
+	Segment *s;
+	for(i = 0; i < givenData.segCount; i++){
+		s = givenData.segList[i];
+		fprintf(stderr, "S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
+	}
+}
+
+void printSegListSortedByCC()
+{
+	int i;
+	Segment *s;
+	for(i = 0; i < givenData.segCount; i++){
+		s = segListSortedByCC[i];
+		fprintf(stderr, "S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
+	}
+}
+
+
+//
+// 画像出力
+//
+
+char b[3], a[54] = {
+	// BITMAPFILEHEADER: +0
+    0x42, 0x4d, 0x36, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00,
+	// BITMAPINFOHEADER: +14
+    0x28, 0x00, 0x00, 0x00, 
+	0x00, 0x01, 0x00, 0x00, // XSIZE
+	0x00, 0x01, 0x00, 0x00, // YSIZE
+	0x01, 0x00, 0x18
+    // 残りはすべて0
+};
+
+#define IMG_XSIZE	1000
+
+void printAsImg(const char *str, const char *filename)
+{
+	// str中で'\0'または'x'の場所は，．
+	FILE *fp = fopen(filename, "wb");
+	int i;
+	uint32_t col, xsize, ysize, pbytes;
+	//
+	if(!fp) return;
+	xsize = IMG_XSIZE;
+	ysize = (givenData.tLen + IMG_XSIZE - 1) / IMG_XSIZE;
+	pbytes = 3 * xsize + ysize;
+	*((int32_t *)&a[0x12]) = IMG_XSIZE;
+	*((int32_t *)&a[0x16]) = -ysize;	// 上から下の順でピクセルを配置するため．
+	*((int32_t *)&a[0x02]) = 54 + pbytes;
+	fwrite(a, 1, 54, fp);
+	//
+	for(i = 0; i < givenData.tLen; i++){
+		// bgrの順
+/*
+		if(str[i] < 'a' || 'c' < str[i]){
+			// 未決定の部分はgivenData.tStrですでに与えられていればそちらを表示
+			col = 0xff << (givenData.tStr[i] - 'a') * 8;
+		} else{
+*/
+			col = 0xff << (str[i] - 'a') * 8;
+//		}
+		fputc((col >> 16)	& 0xff, fp);
+		fputc((col >> 8)	& 0xff, fp);
+		fputc(col			& 0xff, fp);
+	}
+	for(; i < pbytes; i++){
+		fputc(0xc6, fp);
+		fputc(0xc6, fp);
+		fputc(0xc6, fp);
+	}
+	fclose(fp);
 }
 
 //
@@ -56,27 +140,6 @@ int seglen_cmp(const void *p, const void *q)
 }
 
 
-#define PPM_XSIZE	1000
-void printAsImg(const char *str, const char *filename)
-{
-	FILE *fp = fopen(filename, "wb");
-	if(!fp) return;
-	int i;
-	uint32_t col;
-	fprintf(fp, "P3 %d %d 255 ", PPM_XSIZE, (givenData.tLen + PPM_XSIZE - 1) / PPM_XSIZE);
-	for(i = 0; i < givenData.tLen; i++){
-		if(str[i] < 'a' || 'c' < str[i]){
-			if(givenData.tStr[i]) col = 0xff << (givenData.tStr[i] - 'a') * 8;
-			else col = 0;
-		} else{
-			col = 0xff << (str[i] - 'a') * 8;
-		}
-		//col = givenData.tStr[i] == 'x' ? 0xffffff : 0x000000;
-		fprintf(fp, "%d %d %d ", (col >> 16) & 0xff, (col >> 8) & 0xff, col & 0xff);
-	}
-	fclose(fp);
-}
-
 void readT()
 {
 	// 読み込み
@@ -85,7 +148,7 @@ void readT()
 	givenData.tLen--;
 	givenData.tStr[givenData.tLen] = 0;	// 末尾の改行文字を除去
 
-	printAsImg(givenData.tStr, "T.ppm");
+	printAsImg(givenData.tStr, "T.bmp");
 
 	// 以下はデバッグ用
 	//fprintf(stderr, "T'[%d]=%s\n", givenData.tLen, givenData.tStr);
@@ -162,13 +225,12 @@ int seg_cmp_cc(const void *p, const void *q)
 	return sp->candidates - sq->candidates;
 }
 
-
-int is_matched(int ofs, Segment *s)
+int is_matched_with_skip(int ofs, Segment *s, int skip)
 {
 	// segIDがofsに配置できるなら1を返す。tStrのみを参照し、現在の配置状況には依存しない。
 	int i;
 	const char *longstr = &givenData.tStr[ofs];
-	for(i = 0; i < s->len; i++){
+	for(i = skip; i < s->len; i++){
 		if(longstr[i] != s->str[i] && longstr[i] != 'x') return 0;
 	}
 	return 1;
@@ -183,6 +245,161 @@ int is_empty(int ofs, Segment *s)
 	}
 	return 1;
 }
+
+//
+// データ生成
+//
+void updateDecisionList()
+{
+	int i, k, count, *clist;
+	Segment *s;
+	fprintf(stderr, "Updating ...\n");
+	for(i = fixedIndexInSegListCC; i < givenData.segCount; i++){
+		// 未配置のセグメントについて、配置可能な位置の個数を更新する
+		s = segListSortedByCC[i];
+		if(s->candidates == -1){
+			fixedIndexInSegListCC++;
+			continue;	// すでにこのsegmentは配置されているのでチェックしない
+		}
+		clist = s->baseCandidateList;
+		count = 0;
+		for(k = 0; clist[k] != -1; k++){
+			if(clist[k] == -2) continue;	// 配置不能とすでにわかっている位置は飛ばす
+			if(is_empty(clist[k], s)){	// すでにT'パターンにあうことはわかっているので、重ならないかだけチェックすればよい（高速化）
+				count++;
+			} else{
+				clist[k] = -2;	// 配置不能とマークする
+			}
+		}
+		s->candidates = count;
+	}
+	// 更新した候補数にしたがってソートする
+	fprintf(stderr, "Sorting...\n");
+	qsort(segListSortedByCC, givenData.segCount - fixedIndexInSegListCC, sizeof(Segment *), seg_cmp_cc);
+}
+
+void initCandidateList()
+{
+	int i, ofs, ci, k, prefixLen;
+	const int *indexPage;
+	Segment *s;
+	fprintf(stderr, "Generating candidateList1...\n");
+	for(i = 0; i < 3; i++){
+		// candidateOfsList1を生成（最初の1文字の挿入可能性）
+		ci = 0;
+		candidateOfsList1[i] = &candidateOfsBuf[candidateOfsBufCount];
+		for(ofs = 0; ofs < givenData.tLen; ofs++){
+			if(givenData.tStr[ofs] == 'x' || givenData.tStr[ofs] == 'a' + i){
+				candidateOfsList1[i][ci++] = ofs;
+			}
+		}
+		candidateOfsList1[i][ci++] = -1;
+		candidateOfsBufCount += ci;
+	}
+	fprintf(stderr, "Generating candidateList...\n");
+	// 各セグメントの挿入可能性
+	for(i = givenData.segCount - 1; i >= 0; i--){
+		// 初期時点における配置可能ofsのリストを作成
+		s = givenData.segList[i];
+		s->baseCandidateList = &candidateOfsBuf[candidateOfsBufCount];
+		ci = 0;
+		if(s->prefixSeg){
+			// プレフィックスが存在するなら、そのcandidateの部分集合になるはず
+			indexPage = s->prefixSeg->baseCandidateList;
+			prefixLen = s->prefixSeg->len;
+		} else{
+			// 最初の1文字が存在する位置を対象に検索させる
+			indexPage = candidateOfsList1[s->str[0] - 'a'];
+			prefixLen = 1;
+		}
+		for(k = 0; ~indexPage[k]; k++){
+			ofs = indexPage[k];
+			if(is_matched_with_skip(ofs, s, prefixLen)){
+				s->baseCandidateList[ci++] = ofs;
+			}
+		}
+		s->baseCandidateList[ci++] = -1;
+		candidateOfsBufCount += ci;
+	}
+	updateDecisionList();
+}
+
+//
+// 確定的fill
+//
+
+int putDecidedSeg()
+{
+	// 配置しうるofsが一つしかないsegを配置してしまう。
+	// もし矛盾するものがあった場合は-1を返す
+	int i, fixCount = 0, ofs, k;
+	Segment *s;
+	for(i = 0; i < givenData.segCount; i++){
+		if(segListSortedByCC[i]->candidates != -1) break;	// すでに配置済みのsegを飛ばす
+	}
+	for(; i < givenData.segCount; i++){
+		//if(segListSortedByCC[i]->candidates != 1) break;	// 候補数順にソートされているので、1でなくなったら終了
+		if(segListSortedByCC[i]->candidates != segListSortedByCC[i]->duplicateCount) continue;
+		s = segListSortedByCC[i];
+		s->candidates = -1;	// 配置済みなら-1
+		fprintf(stderr, "S[%d](%d) = %s\n", s->len, s->duplicateCount, s->str);
+		for(k = 0; s->baseCandidateList[k] != -1; k++){
+			ofs = s->baseCandidateList[k];
+			if(ofs == -2 || !is_empty(ofs, s)) continue;
+			// おける場所はここみたいだ。ここに配置しよう。
+			putSegAtOfs(s, ofs);
+			fixCount++;
+			break;
+		}
+		if(s->baseCandidateList[k] == -1) return -1;	// 次の候補が見つからなかった。矛盾だ。
+	}
+	fprintf(stderr, "%d segs fixed.\n", fixCount);
+	return fixCount;
+}
+
+void putAllDecidedSeg()
+{
+	int fixCount;
+	for(;;){
+		//printSegListSortedByCC();
+		fixCount = putDecidedSeg();
+		if(fixCount == -1){
+			fprintf(stderr, "Conflict detected\n");
+			exit(EXIT_FAILURE);
+		}
+		updateDecisionList();
+		if(fixCount == 0) break;
+	}
+}
+
+//
+// 確率的fill
+//
+
+void fillFuzzy()
+{
+	int i, k, ofs;
+	Segment *s;
+	fprintf(stderr, "Filling fuzzy...\n");
+	for(i = givenData.segCount - 1; i >= 0; i--){
+		s = givenData.segList[i];
+		//s = segListSortedByCC[i];
+		if(s->candidates == -1) continue;	// すでに配置されているセグメントに関しては検討しない
+		// if(s->len < 2) continue;	// 短すぎるものに関しては埋めない．
+		//fprintf(stderr, "FUZZY: S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
+		for(k = 0; s->baseCandidateList[k] != -1; k++){
+			ofs = s->baseCandidateList[k];
+			if(ofs == -2) continue;	// おけないとすでに判明している（確実に配置するフェーズの段階で）
+			// とにかくおける場所を埋めてゆく
+			//fprintf(stderr, "%d\n", ofs);
+			putSegAtOfs(s, ofs);
+		}
+	}
+}
+
+//
+// 残り物fill系
+//
 
 void fillGivenAnswer(char *fixedStr)
 {
@@ -218,162 +435,9 @@ void fillRestX(char *fixedStr)
 	}
 }
 
-void updateDecisionList()
-{
-	int i, k, count, *clist;
-	Segment *s;
-	fprintf(stderr, "Updating ...\n");
-	for(i = fixedIndexInSegListCC; i < givenData.segCount; i++){
-		// 未配置のセグメントについて、配置可能な位置の個数を更新する
-		s = segListSortedByCC[i];
-		if(s->candidates == -1){
-			fixedIndexInSegListCC++;
-			continue;	// すでにこのsegmentは配置されているのでチェックしない
-		}
-		clist = s->baseCandidateList;
-		count = 0;
-		for(k = 0; clist[k] != -1; k++){
-			if(clist[k] == -2) continue;	// 配置不能とすでにわかっている位置は飛ばす
-			if(is_empty(clist[k], s)){	// すでにT'パターンにあうことはわかっているので、重ならないかだけチェックすればよい（高速化）
-				count++;
-			} else{
-				clist[k] = -2;	// 配置不能とマークする
-			}
-		}
-		s->candidates = count;
-	}
-	// 更新した候補数にしたがってソートする
-	fprintf(stderr, "Sorting...\n");
-	qsort(segListSortedByCC, givenData.segCount - fixedIndexInSegListCC, sizeof(Segment *), seg_cmp_cc);
-}
-
-void initCandidateList()
-{
-	int i, ofs, ci, k;
-	const int *indexPage;
-	Segment *s;
-	fprintf(stderr, "Generating candidateList...\n");
-	for(i = 0; i < 3; i++){
-		// candidateOfsList1を生成（最初の1文字の挿入可能性）
-		ci = 0;
-		candidateOfsList1[i] = &candidateOfsBuf[candidateOfsBufCount];
-		for(ofs = 0; ofs < givenData.tLen; ofs++){
-			if(givenData.tStr[ofs] == 'x' || givenData.tStr[ofs] == 'a' + i){
-				candidateOfsList1[i][ci++] = ofs;
-			}
-		}
-		candidateOfsList1[i][ci++] = -1;
-		candidateOfsBufCount += ci;
-	}
-	// 各セグメントの挿入可能性
-	for(i = givenData.segCount - 1; i >= 0; i--){
-		// 初期時点における配置可能ofsのリストを作成
-		s = givenData.segList[i];
-		s->baseCandidateList = &candidateOfsBuf[candidateOfsBufCount];
-		ci = 0;
-		if(s->prefixSeg){
-			// プレフィックスが存在するなら、そのcandidateの部分集合になるはず
-			indexPage = s->prefixSeg->baseCandidateList;
-		} else{
-			// 最初の1文字が存在する位置を対象に検索させる
-			indexPage = candidateOfsList1[s->str[0] - 'a'];
-		}
-		for(k = 0; ~indexPage[k]; k++){
-			ofs = indexPage[k];
-			if(is_matched(ofs, s)){
-				s->baseCandidateList[ci++] = ofs;
-			}
-		}
-		s->baseCandidateList[ci++] = -1;
-		candidateOfsBufCount += ci;
-	}
-	updateDecisionList();
-}
-
-
-int putDecidedSeg()
-{
-	// 配置しうるofsが一つしかないsegを配置してしまう。
-	// もし矛盾するものがあった場合は-1を返す
-	int i, fixCount = 0, ofs, k;
-	Segment *s;
-	for(i = 0; i < givenData.segCount; i++){
-		if(segListSortedByCC[i]->candidates != -1) break;	// すでに配置済みのsegを飛ばす
-	}
-	for(; i < givenData.segCount; i++){
-		//if(segListSortedByCC[i]->candidates != 1) break;	// 候補数順にソートされているので、1でなくなったら終了
-		if(segListSortedByCC[i]->candidates != segListSortedByCC[i]->duplicateCount) continue;
-		s = segListSortedByCC[i];
-		s->candidates = -1;	// 配置済みなら-1
-		fprintf(stderr, "S[%d](%d) = %s\n", s->len, s->duplicateCount, s->str);
-		for(k = 0; s->baseCandidateList[k] != -1; k++){
-			ofs = s->baseCandidateList[k];
-			if(ofs == -2 || !is_empty(ofs, s)) continue;
-			// おける場所はここみたいだ。ここに配置しよう。
-			putSegAtOfs(s, ofs);
-			fixCount++;
-			break;
-		}
-		if(s->baseCandidateList[k] == -1) return -1;	// 次の候補が見つからなかった。矛盾だ。
-	}
-	fprintf(stderr, "%d segs fixed.\n", fixCount);
-	return fixCount;
-}
-
-void printSegListSortedByCC()
-{
-	int i;
-	Segment *s;
-	for(i = 0; i < givenData.segCount; i++){
-		s = segListSortedByCC[i];
-		fprintf(stderr, "S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
-	}
-}
-
-void putAllDecidedSeg()
-{
-	int fixCount;
-	for(;;){
-		//printSegListSortedByCC();
-		fixCount = putDecidedSeg();
-		if(fixCount == -1){
-			fprintf(stderr, "Conflict detected\n");
-			exit(EXIT_FAILURE);
-		}
-		updateDecisionList();
-		if(fixCount == 0) break;
-	}
-}
-
-void fillFuzzy()
-{
-	int i, k, ofs;
-	Segment *s;
-	fprintf(stderr, "Filling fuzzy...\n");
-	for(i = givenData.segCount - 1; i >= 0; i--){
-		s = givenData.segList[i];
-		//s = segListSortedByCC[i];
-		if(s->candidates == -1) continue;	// すでに配置されているセグメントに関しては検討しない
-		// if(s->len < 2) continue;	// 短すぎるものに関しては埋めない．
-		//fprintf(stderr, "FUZZY: S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
-		for(k = 0; s->baseCandidateList[k] != -1; k++){
-			ofs = s->baseCandidateList[k];
-			if(ofs == -2) continue;	// おけないとすでに判明している（確実に配置するフェーズの段階で）
-			// とにかくおける場所を埋めてゆく
-			//fprintf(stderr, "%d\n", ofs);
-			putSegAtOfs(s, ofs);
-		}
-	}
-}
-void printSegList()
-{
-	int i;
-	Segment *s;
-	for(i = 0; i < givenData.segCount; i++){
-		s = givenData.segList[i];
-		fprintf(stderr, "S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
-	}
-}
+//
+// main
+//
 
 int main_prg(int argc, char** argv)
 {
@@ -386,11 +450,11 @@ int main_prg(int argc, char** argv)
 	//
 	//printSegListSortedByCC();
 	putAllDecidedSeg();
-	printAsImg(fixedStr, "Tdecided.ppm");
+	printAsImg(fixedStr, "Tdecided.bmp");
 	//
 	fillFuzzy();
 	fillRestX(fixedStr);	//埋められなかった部分をなんとかする
-	printAsImg(fixedStr, "Tfixed.ppm");
+	printAsImg(fixedStr, "Tfixed.bmp");
 	// 結果出力
 	printf("%s\n", fixedStr);
 	return 0;
