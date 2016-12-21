@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <time.h>
 
 #define INPUT_LINE_SIZE 		(500 * 1024)
 #define MAX_SEGMENTS			(32 * 1024)
@@ -36,6 +37,7 @@ int candidateOfsBufCount = 0;
 int *candidateOfsList1[3];	// a(0), b(1), c(2)それぞれからはじまるindexを保持
 
 Segment *segListSortedByCC[MAX_SEGMENTS];	// CandidateCountの昇順にソート。
+Segment *segListSortedByAlphabetical[MAX_SEGMENTS];	// 辞書順にソート。
 int fixedIndexInSegListCC;
 
 char fixedStr[INPUT_LINE_SIZE];		// 修正後の文字列が入る。初めは0初期化されている。
@@ -53,6 +55,28 @@ int seglen_cmp(const void *p, const void *q)
 	return (strlen((*(const Segment **)q)->str) - strlen((*(const Segment **)p)->str));
 }
 
+
+#define PPM_XSIZE	1000
+void printAsImg(const char *str, const char *filename)
+{
+	FILE *fp = fopen(filename, "wb");
+	if(!fp) return;
+	int i;
+	uint32_t col;
+	fprintf(fp, "P3 %d %d 255 ", PPM_XSIZE, (givenData.tLen + PPM_XSIZE - 1) / PPM_XSIZE);
+	for(i = 0; i < givenData.tLen; i++){
+		if(str[i] < 'a' || 'c' < str[i]){
+			if(givenData.tStr[i]) col = 0xff << (givenData.tStr[i] - 'a') * 8;
+			else col = 0;
+		} else{
+			col = 0xff << (str[i] - 'a') * 8;
+		}
+		//col = givenData.tStr[i] == 'x' ? 0xffffff : 0x000000;
+		fprintf(fp, "%d %d %d ", (col >> 16) & 0xff, (col >> 8) & 0xff, col & 0xff);
+	}
+	fclose(fp);
+}
+
 void readT()
 {
 	// 読み込み
@@ -61,8 +85,16 @@ void readT()
 	givenData.tLen--;
 	givenData.tStr[givenData.tLen] = 0;	// 末尾の改行文字を除去
 
+	printAsImg(givenData.tStr, "T.ppm");
+
 	// 以下はデバッグ用
 	//fprintf(stderr, "T'[%d]=%s\n", givenData.tLen, givenData.tStr);
+}
+
+int seg_cmp_alpha(const void *p, const void *q)
+{
+	const Segment *sp = *(const Segment **)p, *sq = *(const Segment **)q;
+	return strcmp(sp->str, sq->str);
 }
 
 void readSegList()
@@ -89,40 +121,45 @@ void readSegList()
 		// 新規タグなので追加
 		s->str = p;
 		s->isFixed = 0;
+		//
 		givenData.segList[i] = s;
 		segListSortedByCC[i] = s;
+		segListSortedByAlphabetical[i] = s;
+		//
 		s->duplicateCount = 1;
 		p += s->len + 1;
 		givenData.segCount++;
 	}
 
 	qsort(givenData.segList, givenData.segCount, sizeof(Segment *), seglen_cmp);
+	qsort(segListSortedByAlphabetical, givenData.segCount, sizeof(Segment *), seg_cmp_alpha);
 
-	fprintf(stderr, "Checking prefix...\n");
+	fprintf(stderr, "Building Prefix Tree...\n");
+	int L;
 	for(i = givenData.segCount - 1; i >= 0; i--){
 		// セグメントiのプレフィックスとなっているセグメントkを探す
-		for(k = i + 1; k < givenData.segCount; k++){	// 長い方から短い方へ探す。
-			if(strcmp(givenData.segList[i]->str, givenData.segList[k]->str) >= 'a') break;
+		s = segListSortedByAlphabetical[i];
+		L = s->len - 1;
+		for(k = i - 1; k >= 0; k--){
+			if(segListSortedByAlphabetical[k]->len > L) continue;
+			if(strcmp(s->str, segListSortedByAlphabetical[k]->str) >= 'a') break;
+			L = segListSortedByAlphabetical[k]->len;
 		}
-		if(i < givenData.segCount){
+		if(k >= 0){
 			// kがプレフィックスだ！
-			givenData.segList[i]->prefixSeg = givenData.segList[k];
+			s->prefixSeg = segListSortedByAlphabetical[k];
 		} else{
 			// みつからなかった…
-			givenData.segList[i]->prefixSeg = NULL;	// 不要（NULL初期化されているはずだから）だけど一応書いておく
+			s->prefixSeg = NULL;	// 不要（NULL初期化されているはずだから）だけど一応書いておく
 		}
 	}
+	fprintf(stderr, "Building Prefix Tree Done.\n");
 }
 
 int seg_cmp_cc(const void *p, const void *q)
 {
 	const Segment *sp = *(const Segment **)p, *sq = *(const Segment **)q;
 	return sp->candidates - sq->candidates;
-/*
-	int d = sp->candidates - sq->candidates;
-	if(d) return d;
-	return (sq->len - sp->len);
-*/
 }
 
 
@@ -147,13 +184,34 @@ int is_empty(int ofs, Segment *s)
 	return 1;
 }
 
-void fillRestX(char *fixedStr)
+void fillGivenAnswer(char *fixedStr)
 {
 	int i;
 	// まず、そもそも与えられている正解部分を再度上書きする（正解をわざわざ間違える必要なんてない）
 	for(i = 0; i < givenData.tLen; i++){
 		if(givenData.tStr[i] != 'x') fixedStr[i] = givenData.tStr[i];
 	}
+}
+
+void fillMidX(char *fixedStr)
+{
+	int i;
+	int c;
+	for(i = 1; i < givenData.tLen - 1; i++){
+		if(!fixedStr[i]/* && fixedStr[i - 1] && fixedStr[i + 1]*/){
+			// まんなかだけ空いている！
+			c = fixedStr[i - 1] + fixedStr[i + 1] - 'a' * 2;
+			fixedStr[i] = ((3 - c) % 3) + 'a';
+			// aとbに挟まれていたらc
+			// bとcに挟まれていたらa
+			// cとaに挟まれていたらb
+		}
+	}
+}
+
+void fillRestX(char *fixedStr)
+{
+	int i;
 
 	for(i = 0; i < givenData.tLen; i++){
 		if(!fixedStr[i]) fixedStr[i] = 'c';
@@ -243,10 +301,11 @@ int putDecidedSeg()
 		if(segListSortedByCC[i]->candidates != -1) break;	// すでに配置済みのsegを飛ばす
 	}
 	for(; i < givenData.segCount; i++){
-		if(segListSortedByCC[i]->candidates != 1) break;	// 候補数順にソートされているので、1でなくなったら終了
+		//if(segListSortedByCC[i]->candidates != 1) break;	// 候補数順にソートされているので、1でなくなったら終了
+		if(segListSortedByCC[i]->candidates != segListSortedByCC[i]->duplicateCount) continue;
 		s = segListSortedByCC[i];
 		s->candidates = -1;	// 配置済みなら-1
-		//fprintf(stderr, "S[%d] = %s\n", s->len, s->str);
+		fprintf(stderr, "S[%d](%d) = %s\n", s->len, s->duplicateCount, s->str);
 		for(k = 0; s->baseCandidateList[k] != -1; k++){
 			ofs = s->baseCandidateList[k];
 			if(ofs == -2 || !is_empty(ofs, s)) continue;
@@ -295,6 +354,7 @@ void fillFuzzy()
 		s = givenData.segList[i];
 		//s = segListSortedByCC[i];
 		if(s->candidates == -1) continue;	// すでに配置されているセグメントに関しては検討しない
+		// if(s->len < 2) continue;	// 短すぎるものに関しては埋めない．
 		//fprintf(stderr, "FUZZY: S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
 		for(k = 0; s->baseCandidateList[k] != -1; k++){
 			ofs = s->baseCandidateList[k];
@@ -326,8 +386,11 @@ int main_prg(int argc, char** argv)
 	//
 	//printSegListSortedByCC();
 	putAllDecidedSeg();
+	printAsImg(fixedStr, "Tdecided.ppm");
+	//
 	fillFuzzy();
 	fillRestX(fixedStr);	//埋められなかった部分をなんとかする
+	printAsImg(fixedStr, "Tfixed.ppm");
 	// 結果出力
 	printf("%s\n", fixedStr);
 	return 0;
