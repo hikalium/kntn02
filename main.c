@@ -38,7 +38,6 @@ int *candidateOfsList1[3];	// a(0), b(1), c(2)それぞれからはじまるinde
 
 Segment *segListSortedByCC[MAX_SEGMENTS];	// CandidateCountの昇順にソート。
 Segment *segListSortedByAlphabetical[MAX_SEGMENTS];	// 辞書順にソート。
-int fixedIndexInSegListCC;
 
 //
 // 配置
@@ -216,7 +215,6 @@ void readSegList()
 			s->prefixSeg = NULL;	// 不要（NULL初期化されているはずだから）だけど一応書いておく
 		}
 	}
-	fprintf(stderr, "Building Prefix Tree Done.\n");
 }
 
 int seg_cmp_cc(const void *p, const void *q)
@@ -251,6 +249,7 @@ int is_empty(int ofs, Segment *s)
 //
 void updateDecisionList()
 {
+	static int fixedIndexInSegListCC = 0;
 	int i, k, count, *clist;
 	Segment *s;
 	fprintf(stderr, "Updating ...\n");
