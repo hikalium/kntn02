@@ -8,6 +8,8 @@
 #define MAX_SEGMENTS			(32 * 1024)
 #define MAX_CANDIDATE_OFFSETS	(256 * 1024 * 1024)
 
+#define MAX(a, b)	((a) > (b) ? (a) : (b))
+
 typedef struct SEGMENT Segment;
 struct SEGMENT {
 	char *str;			// segbuf中へのポインタ
@@ -74,6 +76,21 @@ void printSegListSortedByCC()
 	}
 }
 
+void printErrorRate(const char *str, const char *ref)
+{
+	int diff = 0, mismatch = 0, i;
+	if(!ref) return;
+	for(i = 0; i < givenData.tLen; i++){
+		if(str[i] != ref[i]){
+			diff++;
+			if(str[i] && str[i] != 'x'){
+				// xでもNULでもないので，間違った予測をしている．
+				mismatch++;
+			}
+		}
+	}
+	fprintf(stderr, "%d / %d differs (error rate: %.6f, mismatch: %d)\n", diff, givenData.tLen, (double)diff / givenData.tLen, mismatch);
+}
 
 //
 // 画像出力
@@ -138,6 +155,19 @@ int seglen_cmp(const void *p, const void *q)
 	return (strlen((*(const Segment **)q)->str) - strlen((*(const Segment **)p)->str));
 }
 
+char *readRef(const char *fname)
+{
+	// 読み込み
+	static char refbuf[INPUT_LINE_SIZE];
+	FILE *fp = fopen(fname, "rb");
+	//
+	if(!fp) return NULL;
+	fgets(refbuf, INPUT_LINE_SIZE, fp);
+	refbuf[strlen(refbuf) - 1] = 0;	// 末尾の改行文字を除去
+	//
+	printAsImg(refbuf, "Tref.bmp");
+	return refbuf;
+}
 
 void readT()
 {
@@ -396,6 +426,54 @@ void fillFuzzy()
 	}
 }
 
+int probabilityList[INPUT_LINE_SIZE][3];
+
+void putProbabilityList(Segment *s, int ofs, int p)
+{
+	int i;
+	for(i = 0; i < s->len; i++){
+		probabilityList[ofs + i][s->str[i] - 'a'] += p;
+	}
+}
+
+void genProbabilityList()
+{
+	int i, k, ofs;
+	Segment *s;
+	int p;
+	fprintf(stderr, "Filling fuzzy...\n");
+	for(i = givenData.segCount - 1; i >= 0; i--){
+		s = givenData.segList[i];
+		//s = segListSortedByCC[i];
+		if(s->candidates == -1) continue;	// すでに配置されているセグメントに関しては検討しない
+		p = s->duplicateCount * givenData.tLen / s->candidates;
+		fprintf(stderr, "P: S%04d[%2d]x%4d : %5d = %5d %s\n", i, s->len, s->duplicateCount, s->candidates, p, s->str);
+		for(k = 0; s->baseCandidateList[k] != -1; k++){
+			ofs = s->baseCandidateList[k];
+			if(ofs == -2) continue;	// おけないとすでに判明している（確実に配置するフェーズの段階で）
+			putProbabilityList(s, ofs, p);
+		}
+	}
+}
+
+void fillProbableChar()
+{
+	int i, max;
+	double sum;
+	genProbabilityList();
+	for(i = 0; i < givenData.segCount; i++){
+		sum = probabilityList[i][0] + probabilityList[i][1] + probabilityList[i][2];
+		if(sum == 0) continue;
+		max = MAX(probabilityList[i][0], MAX(probabilityList[i][1], probabilityList[i][2]));
+		if((double)max / sum > 0.9){
+			if(probabilityList[i][0] == max) fixedStr[i] = 'a';
+			else if(probabilityList[i][1] == max) fixedStr[i] = 'b';
+			else fixedStr[i] = 'c';
+		}
+		//fprintf(stderr, "%5d: %5.2f %5.2f %5.2f\n", i, probabilityList[i][0] / sum, probabilityList[i][1] / sum, probabilityList[i][2] / sum);
+	}
+}
+
 //
 // 残り物fill系
 //
@@ -430,7 +508,7 @@ void fillRestX(char *fixedStr)
 	int i;
 
 	for(i = 0; i < givenData.tLen; i++){
-		if(!fixedStr[i]) fixedStr[i] = 'c';
+		if(!fixedStr[i]) fixedStr[i] = 'x';
 	}
 }
 
@@ -440,22 +518,32 @@ void fillRestX(char *fixedStr)
 
 int main_prg(int argc, char** argv)
 {
+	const char *refstr = NULL;
 	// T'読み込み
 	readT();
 	// S読み込み
 	readSegList();
+	// デバッグ用にrefが指定されていれば読み込む
+	if(argc == 2){
+		// 第1引数をrefファイル名とみなす
+		refstr = readRef(argv[1]);
+	}
 	//
 	initCandidateList();
 	//
 	//printSegListSortedByCC();
 	putAllDecidedSeg();
 	printAsImg(fixedStr, "Tdecided.bmp");
+	printErrorRate(fixedStr, refstr);
 	//
+	//fillProbableChar();
 	fillFuzzy();
+	fillGivenAnswer(fixedStr);
 	fillRestX(fixedStr);	//埋められなかった部分をなんとかする
 	printAsImg(fixedStr, "Tfixed.bmp");
 	// 結果出力
 	printf("%s\n", fixedStr);
+	printErrorRate(fixedStr, refstr);
 	return 0;
 }
 
