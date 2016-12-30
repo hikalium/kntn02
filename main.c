@@ -509,12 +509,12 @@ void fillProbableChar()
 
 void fillHikalium()
 {
-	// s->candidatesが4以下で，s->duplicateCountが1のセグメントを，numOfXが最小の位置に配置する．
+	// s->duplicateCountが1のセグメントを，numOfXが最小の位置に配置する．
 	int i, k, minOfs, minNumOfX, minNumOfX2;
 	Segment *s;
 	for(i = 0; i < givenData.segCount; i++){
 		s = givenData.segList[i];
-		if(s->candidates == -1 || s->candidates > 6 || s->duplicateCount != 1) continue;
+		if(s->candidates == -1 || s->duplicateCount != 1) continue;
 		//fprintf(stderr, "S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
 		minNumOfX = INPUT_LINE_SIZE;	// ありえないほど大きい値
 		for(k = 0; s->baseCandidateList[k] != -1; k++){
@@ -527,7 +527,7 @@ void fillHikalium()
 			}
 		}
 		//fprintf(stderr, "-> fix @%d\n", minOfs);
-		if(minNumOfX2 - minNumOfX > 5){
+		if(minNumOfX2 - minNumOfX > 2){
 			putSegAtOfs(s, minOfs);
 			s->candidates = -1;
 		}
