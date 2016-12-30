@@ -56,13 +56,13 @@ void putSegAtOfs(Segment *s, int ofs)
 // デバッグ出力
 //
 
-void printSegList()
+void printSegList(FILE *fp)
 {
 	int i;
 	Segment *s;
 	for(i = 0; i < givenData.segCount; i++){
 		s = givenData.segList[i];
-		fprintf(stderr, "S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
+		fprintf(fp, "S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
 	}
 }
 
@@ -544,6 +544,11 @@ int main_prg(int argc, char** argv)
 	// 結果出力
 	printf("%s\n", fixedStr);
 	printErrorRate(fixedStr, refstr);
+	if(refstr){
+		FILE *fp = fopen("seglist.txt", "w");
+		printSegList(fp);
+		fclose(fp);
+	}
 	return 0;
 }
 

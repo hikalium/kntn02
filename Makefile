@@ -20,8 +20,10 @@ chk/chk:
 clean:
 	rm  $(OBJS) $(PROG)
 
-test: grpwk chk/chk
+$(TESTDATA)_ref:
 	cd testmaker; make NUM=$(NUM)
+
+test: grpwk chk/chk $(TESTDATA)_ref $(TESTDATA)_in
 	./grpwk $(TESTDATA)_ref < $(TESTDATA)_in > out.txt
 	head -1 $(TESTDATA)_in > base.txt
 	./chk/chk base.txt $(TESTDATA)_ref
