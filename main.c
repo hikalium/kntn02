@@ -66,7 +66,7 @@ void printSegList(FILE *fp)
 	Segment *s;
 	for(i = 0; i < givenData.segCount; i++){
 		s = givenData.segList[i];
-		if(s->candidates == -1) continue;	// 配置済みのセグメントは表示しない
+		//if(s->candidates == -1) continue;	// 配置済みのセグメントは表示しない
 		fprintf(fp, "S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
 		for(k = 0; s->baseCandidateList[k] != -1; k++){
 			fprintf(fp, "\t%5d %d\n", s->baseCandidateList[k], s->numOfXList[k]);
@@ -142,12 +142,11 @@ void printAsImg(const char *str, const char *filename)
 	//
 	for(i = 0; i < givenData.tLen; i++){
 		// bgrの順
-/*
-		if(str[i] < 'a' || 'c' < str[i]){
-			// 未決定の部分はgivenData.tStrですでに与えられていればそちらを表示
-			col = 0xff << (givenData.tStr[i] - 'a') * 8;
-		} else{
-*/
+
+//		if(str[i] < 'a' || 'c' < str[i]){
+//			// 未決定の部分はgivenData.tStrですでに与えられていればそちらを表示
+//			col = 0xff << (givenData.tStr[i] - 'a') * 8;
+//		} else{
 			col = 0xff << (str[i] - 'a') * 8;
 //		}
 		fputc((col >> 16)	& 0xff, fp);
@@ -192,9 +191,9 @@ void readT()
 	givenData.tLen--;
 	givenData.tStr[givenData.tLen] = 0;	// 末尾の改行文字を除去
 
-	printAsImg(givenData.tStr, "T.bmp");
 
 	// 以下はデバッグ用
+	//printAsImg(givenData.tStr, "T.bmp");
 	//fprintf(stderr, "T'[%d]=%s\n", givenData.tLen, givenData.tStr);
 }
 
@@ -647,6 +646,7 @@ int main_prg(int argc, char** argv)
 	fillHikalium(2, 10);
 	printErrorRate(fixedStr, refstr);
 */
+
 	// 82683
 	fillHikalium(6, 12);
 	printErrorRate(fixedStr, refstr);
@@ -660,6 +660,7 @@ int main_prg(int argc, char** argv)
 	printErrorRate(fixedStr, refstr);
 	fillHikalium(2, 11);
 	printErrorRate(fixedStr, refstr);
+
 	//
 	fillFuzzy();
 	keitaFillRestX(fixedStr);
@@ -670,11 +671,9 @@ int main_prg(int argc, char** argv)
 	// 結果出力
 	printf("%s\n", fixedStr);
 	printErrorRate(fixedStr, refstr);
-	if(refstr){
-		FILE *fp = fopen("seglist.txt", "w");
-		printSegList(fp);
-		fclose(fp);
-	}
+	FILE *fp = fopen("seglist.txt", "w");
+	printSegList(fp);
+	fclose(fp);
 	return 0;
 }
 
