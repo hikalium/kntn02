@@ -438,6 +438,7 @@ void putAllDecidedSeg()
 // 確率的fill
 //
 
+#define FILL_FUZZY_MIN_LEN	5
 void fillFuzzy()
 {
 	int i, k, ofs;
@@ -447,6 +448,7 @@ void fillFuzzy()
 		s = givenData.segList[i];
 		//s = segListSortedByCC[i];
 		if(s->candidates == -1) continue;	// すでに配置されているセグメントに関しては検討しない
+		if(s->len <= FILL_FUZZY_MIN_LEN) continue;	// 短いものはkeitaFillRestXで処理
 		// if(s->len < 2) continue;	// 短すぎるものに関しては埋めない．
 		//fprintf(stderr, "FUZZY: S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
 		for(k = 0; s->baseCandidateList[k] != -1; k++){
@@ -547,29 +549,56 @@ void fillGivenAnswer(char *fixedStr)
 		if(givenData.tStr[i] != 'x') fixedStr[i] = givenData.tStr[i];
 	}
 }
-
-void fillMidX(char *fixedStr)
-{
-	int i;
-	int c;
-	for(i = 1; i < givenData.tLen - 1; i++){
-		if(!fixedStr[i]/* && fixedStr[i - 1] && fixedStr[i + 1]*/){
-			// まんなかだけ空いている！
-			c = fixedStr[i - 1] + fixedStr[i + 1] - 'a' * 2;
-			fixedStr[i] = ((3 - c) % 3) + 'a';
-			// aとbに挟まれていたらc
-			// bとcに挟まれていたらa
-			// cとaに挟まれていたらb
-		}
-	}
-}
-
+/*
 void fillRestX(char *fixedStr)
 {
 	int i;
 
 	for(i = 0; i < givenData.tLen; i++){
 		if(!fixedStr[i]) fixedStr[i] = 'x';
+	}
+}
+*/
+
+void fillMidX(char *fixedStr)
+{
+       int i;
+       int c;
+       for(i = 1; i < givenData.tLen - 1; i++){
+               if(!fixedStr[i]){
+                       // まんなかだけ空いている！
+                       c = fixedStr[i - 1] + fixedStr[i + 1] - 'a' * 2;
+                       fixedStr[i] = ((3 - c) % 3) + 'a';
+                       // aとbに挟まれていたらc
+                       // bとcに挟まれていたらa
+                       // cとaに挟まれていたらb
+               }
+		}
+}
+
+
+void keitaFillRestX(char *fixedStr)
+{
+	fprintf(stderr, "Keiting...\n");
+	int i;
+	// まず、そもそも与えられている正解部分を再度上書きする（正解をわざわざ間違える必要なんてない）
+	for(i = 0; i < givenData.tLen; i++){
+		if(givenData.tStr[i] != 'x') fixedStr[i] = givenData.tStr[i];
+	}
+
+	for(i = 0; i < givenData.tLen; i++){
+		if(!fixedStr[i]){
+			if(i == 0 || i == givenData.tLen) fixedStr[i] = 'b';
+			else if(!fixedStr[i + 1]) fixedStr[i] = 'a';
+			else if(fixedStr[i - 1] == fixedStr[i + 1] && fixedStr[i - 1] == 'a') fixedStr[i] = 'b';
+			else if(fixedStr[i - 1] == fixedStr[i + 1] && fixedStr[i - 1] == 'b') fixedStr[i] = 'a';
+			else if(fixedStr[i - 1] == fixedStr[i + 1] && fixedStr[i - 1] == 'c') fixedStr[i] = 'a';
+			else if((fixedStr[i - 1] == 'a' && fixedStr[i + 1] == 'b') || (fixedStr[i - 1] == 'b' || fixedStr[i + 1] == 
+			'a')) fixedStr[i] = 'c';
+			else if((fixedStr[i - 1] == 'a' && fixedStr[i + 1] == 'c') || (fixedStr[i - 1] == 'c' || fixedStr[i + 1] == 
+			'a')) fixedStr[i] = 'b';
+			else fixedStr[i] = 'a';
+		}
 	}
 }
 
@@ -602,8 +631,10 @@ int main_prg(int argc, char** argv)
 	printErrorRate(fixedStr, refstr);
 	//
 	fillFuzzy();
+	keitaFillRestX(fixedStr);
+	//fillMidX(fixedStr);
 	fillGivenAnswer(fixedStr);
-	fillRestX(fixedStr);	//埋められなかった部分をなんとかする
+	//fillRestX(fixedStr);	//埋められなかった部分をなんとかする
 	printAsImg(fixedStr, "Tfixed.bmp");
 	// 結果出力
 	printf("%s\n", fixedStr);
