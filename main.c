@@ -66,6 +66,7 @@ void printSegList(FILE *fp)
 	Segment *s;
 	for(i = 0; i < givenData.segCount; i++){
 		s = givenData.segList[i];
+		if(s->candidates == -1) continue;	// 配置済みのセグメントは表示しない
 		fprintf(fp, "S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
 		for(k = 0; s->baseCandidateList[k] != -1; k++){
 			fprintf(fp, "\t%5d %d\n", s->baseCandidateList[k], s->numOfXList[k]);
@@ -509,7 +510,7 @@ void fillProbableChar()
 	}
 }
 
-void fillHikalium()
+void fillHikalium(int diffLevel, int minMatchChars)
 {
 	// s->duplicateCountが1のセグメントを，numOfXが最小の位置に配置する．
 	int i, k, minOfs, minNumOfX, minNumOfX2;
@@ -529,7 +530,7 @@ void fillHikalium()
 			}
 		}
 		//fprintf(stderr, "-> fix @%d\n", minOfs);
-		if(minNumOfX2 - minNumOfX > 2){
+		if(minNumOfX2 - minNumOfX > diffLevel && s->len - minNumOfX >= minMatchChars){
 			putSegAtOfs(s, minOfs);
 			s->candidates = -1;
 		}
@@ -627,7 +628,37 @@ int main_prg(int argc, char** argv)
 	printErrorRate(fixedStr, refstr);
 	//
 	//fillProbableChar();
-	fillHikalium();
+	// 5 4 3 2		-> 82939
+	// 6 5 4 3 2	-> 82839
+	// 6 5 4 3 2 2	-> 82808
+	//
+/*
+	// 82747
+	fillHikalium(6, 10);
+	printErrorRate(fixedStr, refstr);
+	fillHikalium(5, 10);
+	printErrorRate(fixedStr, refstr);
+	fillHikalium(4, 10);
+	printErrorRate(fixedStr, refstr);
+	fillHikalium(3, 10);
+	printErrorRate(fixedStr, refstr);
+	fillHikalium(2, 10);
+	printErrorRate(fixedStr, refstr);
+	fillHikalium(2, 10);
+	printErrorRate(fixedStr, refstr);
+*/
+	// 82683
+	fillHikalium(6, 12);
+	printErrorRate(fixedStr, refstr);
+	fillHikalium(5, 12);
+	printErrorRate(fixedStr, refstr);
+	fillHikalium(4, 12);
+	printErrorRate(fixedStr, refstr);
+	fillHikalium(3, 11);
+	printErrorRate(fixedStr, refstr);
+	fillHikalium(2, 11);
+	printErrorRate(fixedStr, refstr);
+	fillHikalium(2, 11);
 	printErrorRate(fixedStr, refstr);
 	//
 	fillFuzzy();
