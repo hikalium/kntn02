@@ -1,3 +1,12 @@
+/*
+ *
+ *	kntn
+ *
+ *	Copyright (c) 2016 Project kntn
+ *	Author: hikalium, keimei, keitasanno, natsuki, nkgwer, pinkiepie, tadokoro
+ *
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
