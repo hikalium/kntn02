@@ -18,6 +18,7 @@ struct SEGMENT {
 	int duplicateCount;
 	int candidates;
 	int *baseCandidateList;	// -1: 終端, -2: すでに埋められた
+	int *numOfXList;
 	Segment *prefixSeg;
 };
 
@@ -37,6 +38,9 @@ InputData givenData;
 int candidateOfsBuf[MAX_CANDIDATE_OFFSETS];
 int candidateOfsBufCount = 0;
 int *candidateOfsList1[3];	// a(0), b(1), c(2)それぞれからはじまるindexを保持
+
+int numOfXBuf[MAX_CANDIDATE_OFFSETS];
+int numOfXBufCount = 0;
 
 Segment *segListSortedByCC[MAX_SEGMENTS];	// CandidateCountの昇順にソート。
 Segment *segListSortedByAlphabetical[MAX_SEGMENTS];	// 辞書順にソート。
@@ -58,11 +62,18 @@ void putSegAtOfs(Segment *s, int ofs)
 
 void printSegList(FILE *fp)
 {
-	int i;
+	int i, k;
 	Segment *s;
 	for(i = 0; i < givenData.segCount; i++){
 		s = givenData.segList[i];
 		fprintf(fp, "S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
+		for(k = 0; s->baseCandidateList[k] != -1; k++){
+			fprintf(fp, "\t%5d %d\n", s->baseCandidateList[k], s->numOfXList[k]);
+			if(k > 5){
+				fprintf(fp, "\t...\n");
+				break;
+			}
+		}
 	}
 }
 
@@ -78,7 +89,7 @@ void printSegListSortedByCC()
 
 void printErrorRate(const char *str, const char *ref)
 {
-	int diff = 0, mismatch = 0, i;
+	int diff = 0, mismatch = 0, i, notX = 0;
 	if(!ref) return;
 	for(i = 0; i < givenData.tLen; i++){
 		if(str[i] != ref[i]){
@@ -88,8 +99,11 @@ void printErrorRate(const char *str, const char *ref)
 				mismatch++;
 			}
 		}
+		if(str[i] && str[i] != 'x'){
+			notX++;
+		}
 	}
-	fprintf(stderr, "%d / %d differs (error rate: %.6f, mismatch: %d)\n", diff, givenData.tLen, (double)diff / givenData.tLen, mismatch);
+	fprintf(stderr, "%d / %d differs (error rate: %.6f, mismatch: %d / %d)\n", diff, givenData.tLen, (double)diff / givenData.tLen, mismatch, notX);
 }
 
 //
@@ -264,6 +278,17 @@ int is_matched_with_skip(int ofs, Segment *s, int skip)
 	return 1;
 }
 
+int get_num_of_x_in_seg(int ofs, Segment *s)
+{
+	// 位置ofsにsを配置した時，そのセグメントがいくつのxをカバーするかを返す．それ以外は一切チェックしない．
+	int i, xc = 0;
+	const char *longstr = &givenData.tStr[ofs];
+	for(i = 0; i < s->len; i++){
+		if(longstr[i] == 'x') xc++;
+	}
+	return xc;
+}
+
 int is_empty(int ofs, Segment *s)
 {
 	// ofsにsを配置するだけの空きがあるか調べる。
@@ -277,7 +302,7 @@ int is_empty(int ofs, Segment *s)
 //
 // データ生成
 //
-void updateDecisionList()
+void updateCandidateList()
 {
 	static int fixedIndexInSegListCC = 0;
 	int i, k, count, *clist;
@@ -331,6 +356,7 @@ void initCandidateList()
 		// 初期時点における配置可能ofsのリストを作成
 		s = givenData.segList[i];
 		s->baseCandidateList = &candidateOfsBuf[candidateOfsBufCount];
+		s->numOfXList = &numOfXBuf[candidateOfsBufCount];
 		ci = 0;
 		if(s->prefixSeg){
 			// プレフィックスが存在するなら、そのcandidateの部分集合になるはず
@@ -344,13 +370,19 @@ void initCandidateList()
 		for(k = 0; ~indexPage[k]; k++){
 			ofs = indexPage[k];
 			if(is_matched_with_skip(ofs, s, prefixLen)){
-				s->baseCandidateList[ci++] = ofs;
+				s->baseCandidateList[ci] = ofs;
+				s->numOfXList[ci] = get_num_of_x_in_seg(ofs, s);
+				ci++;
 			}
 		}
-		s->baseCandidateList[ci++] = -1;
+		//
+		s->baseCandidateList[ci] = -1;
+		s->numOfXList[ci] = -1;
+		ci++;
+		//
 		candidateOfsBufCount += ci;
 	}
-	updateDecisionList();
+	updateCandidateList();
 }
 
 //
@@ -395,8 +427,9 @@ void putAllDecidedSeg()
 		if(fixCount == -1){
 			fprintf(stderr, "Conflict detected\n");
 			exit(EXIT_FAILURE);
+			//return;
 		}
-		updateDecisionList();
+		updateCandidateList();
 		if(fixCount == 0) break;
 	}
 }
@@ -474,6 +507,34 @@ void fillProbableChar()
 	}
 }
 
+void fillHikalium()
+{
+	// s->candidatesが4以下で，s->duplicateCountが1のセグメントを，numOfXが最小の位置に配置する．
+	int i, k, minOfs, minNumOfX, minNumOfX2;
+	Segment *s;
+	for(i = 0; i < givenData.segCount; i++){
+		s = givenData.segList[i];
+		if(s->candidates == -1 || s->candidates > 6 || s->duplicateCount != 1) continue;
+		//fprintf(stderr, "S%04d[%2d]x%3d : %3d = %s\n", i, s->len, s->duplicateCount, s->candidates, s->str);
+		minNumOfX = INPUT_LINE_SIZE;	// ありえないほど大きい値
+		for(k = 0; s->baseCandidateList[k] != -1; k++){
+			if(s->baseCandidateList[k] == -2) continue;
+			//fprintf(stderr, "\t%5d %d\n", s->baseCandidateList[k], s->numOfXList[k]);
+			if(s->numOfXList[k] <= minNumOfX){
+				minNumOfX2 = minNumOfX;
+				minNumOfX = s->numOfXList[k];
+				minOfs = s->baseCandidateList[k];
+			}
+		}
+		//fprintf(stderr, "-> fix @%d\n", minOfs);
+		if(minNumOfX2 - minNumOfX > 5){
+			putSegAtOfs(s, minOfs);
+			s->candidates = -1;
+		}
+	}
+	updateCandidateList();
+}
+
 //
 // 残り物fill系
 //
@@ -537,6 +598,9 @@ int main_prg(int argc, char** argv)
 	printErrorRate(fixedStr, refstr);
 	//
 	//fillProbableChar();
+	fillHikalium();
+	printErrorRate(fixedStr, refstr);
+	//
 	fillFuzzy();
 	fillGivenAnswer(fixedStr);
 	fillRestX(fixedStr);	//埋められなかった部分をなんとかする
