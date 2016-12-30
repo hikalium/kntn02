@@ -18,7 +18,7 @@ struct SEGMENT {
 	int duplicateCount;
 	int candidates;
 	int *baseCandidateList;	// -1: 終端, -2: すでに埋められた
-	int *numOfXList;
+	unsigned char *numOfXList;
 	Segment *prefixSeg;
 };
 
@@ -39,7 +39,7 @@ int candidateOfsBuf[MAX_CANDIDATE_OFFSETS];
 int candidateOfsBufCount = 0;
 int *candidateOfsList1[3];	// a(0), b(1), c(2)それぞれからはじまるindexを保持
 
-int numOfXBuf[MAX_CANDIDATE_OFFSETS];
+unsigned char numOfXBuf[MAX_CANDIDATE_OFFSETS];
 int numOfXBufCount = 0;
 
 Segment *segListSortedByCC[MAX_SEGMENTS];	// CandidateCountの昇順にソート。
@@ -460,7 +460,7 @@ void fillFuzzy()
 		}
 	}
 }
-
+/*
 int probabilityList[INPUT_LINE_SIZE][3];
 
 void putProbabilityList(Segment *s, int ofs, int p)
@@ -508,7 +508,7 @@ void fillProbableChar()
 		//fprintf(stderr, "%5d: %5.2f %5.2f %5.2f\n", i, probabilityList[i][0] / sum, probabilityList[i][1] / sum, probabilityList[i][2] / sum);
 	}
 }
-
+*/
 void fillHikalium(int diffLevel, int minMatchChars)
 {
 	// s->duplicateCountが1のセグメントを，numOfXが最小の位置に配置する．
@@ -566,7 +566,6 @@ void fillMidX(char *fixedStr)
        int c;
        for(i = 1; i < givenData.tLen - 1; i++){
                if(!fixedStr[i]){
-                       // まんなかだけ空いている！
                        c = fixedStr[i - 1] + fixedStr[i + 1] - 'a' * 2;
                        fixedStr[i] = ((3 - c) % 3) + 'a';
                        // aとbに挟まれていたらc
@@ -575,8 +574,7 @@ void fillMidX(char *fixedStr)
                }
 		}
 }
-
-
+/*
 void keitaFillRestX(char *fixedStr)
 {
 	fprintf(stderr, "Keiting...\n");
@@ -592,7 +590,7 @@ void keitaFillRestX(char *fixedStr)
 			else if(!fixedStr[i + 1]) fixedStr[i] = 'a';
 			else if(fixedStr[i - 1] == fixedStr[i + 1] && fixedStr[i - 1] == 'a') fixedStr[i] = 'b';
 			else if(fixedStr[i - 1] == fixedStr[i + 1] && fixedStr[i - 1] == 'b') fixedStr[i] = 'a';
-			else if(fixedStr[i - 1] == fixedStr[i + 1] && fixedStr[i - 1] == 'c') fixedStr[i] = 'a';
+			else if(fixedStr[i - 1] == fixedStr[i + 1] && fixedStr[i - 1] == 'c') fixedStr[i] = 'c';
 			else if((fixedStr[i - 1] == 'a' && fixedStr[i + 1] == 'b') || (fixedStr[i - 1] == 'b' || fixedStr[i + 1] == 
 			'a')) fixedStr[i] = 'c';
 			else if((fixedStr[i - 1] == 'a' && fixedStr[i + 1] == 'c') || (fixedStr[i - 1] == 'c' || fixedStr[i + 1] == 
@@ -601,7 +599,7 @@ void keitaFillRestX(char *fixedStr)
 		}
 	}
 }
-
+*/
 //
 // main
 //
@@ -647,25 +645,24 @@ int main_prg(int argc, char** argv)
 	printErrorRate(fixedStr, refstr);
 */
 
-	// 82683
-	fillHikalium(6, 12);
+	// 82632
+	fillHikalium(6, 14);
 	printErrorRate(fixedStr, refstr);
-	fillHikalium(5, 12);
+	fillHikalium(5, 14);
 	printErrorRate(fixedStr, refstr);
-	fillHikalium(4, 12);
+	fillHikalium(4, 14);
 	printErrorRate(fixedStr, refstr);
-	fillHikalium(3, 11);
+	fillHikalium(3, 12);
 	printErrorRate(fixedStr, refstr);
-	fillHikalium(2, 11);
+	fillHikalium(2, 12);
 	printErrorRate(fixedStr, refstr);
-	fillHikalium(2, 11);
+	fillHikalium(2, 12);
 	printErrorRate(fixedStr, refstr);
-
 	//
 	fillFuzzy();
-	keitaFillRestX(fixedStr);
-	//fillMidX(fixedStr);
+	//keitaFillRestX(fixedStr);
 	fillGivenAnswer(fixedStr);
+	fillMidX(fixedStr);
 	//fillRestX(fixedStr);	//埋められなかった部分をなんとかする
 	printAsImg(fixedStr, "Tfixed.bmp");
 	// 結果出力
